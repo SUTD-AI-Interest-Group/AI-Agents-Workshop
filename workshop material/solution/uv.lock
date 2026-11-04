@@ -15,6 +15,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "crewai", extra = ["tools"] },
     { name = "firecrawl-py" },
+    { name = "pymupdf" },
     { name = "python-dotenv" },
     { name = "requests" },
 ]
@@ -23,6 +24,7 @@ dependencies = [
 requires-dist = [
     { name = "crewai", extras = ["tools"], specifier = "==1.15.35" },
     { name = "firecrawl-py", specifier = ">=4.0" },
+    { name = "pymupdf", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.31" },
 ]

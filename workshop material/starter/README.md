@@ -44,7 +44,7 @@ All the models run through **OpenRouter**. `MODEL` sets the model for the agents
 | `tasks.py` | **You write this.** It starts with `default_task()`. |
 | `tools/` | **You write this.** Put each new tool in its own file. |
 | `crew.py` | **You write this.** It contains `build_crew()`. |
-| `sample-files/` | The brief, interview notes, survey results and a list of existing solutions. |
+| `sample-files/` | The brief, interview notes, survey results, a list of existing solutions, and research on SUTD's double diamond pedagogy (Markdown and PDF). |
 
 ## Steps
 

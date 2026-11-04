@@ -37,7 +37,8 @@ tasks.py        Steps 2 to 4: the five tasks
 tools/          Step 3: one file for each tool
 crew.py         Step 4: puts the agents, tasks and memory into a crew
 board.py        Step 5: the connection to the canvas (from the platform team)
-sample-files/   The brief, interview notes, survey results and existing solutions
+sample-files/   The brief, interview notes, survey results, existing solutions,
+                and research on SUTD's double diamond pedagogy (.md and .pdf)
 ```
 
 Each step adds to the step before it. You can run each step at any time with `main.py`.
@@ -93,7 +94,7 @@ First, this step runs each tool directly, without the model. Then the researcher
 | File | Type | Function |
 |---|---|---|
 | `list_project_files.py` | Custom `@tool` | Lists the files in `sample-files/`. |
-| `read_project_file.py` | Custom `@tool` | Reads one file. It refuses paths outside the folder. Try `../.env`. |
+| `read_project_file.py` | Custom `@tool` | Reads one file (text, Markdown, CSV or PDF). It refuses paths outside the folder. Try `../.env`. |
 | `search_project_files.py` | Custom `@tool` | Finds a keyword in all the files. This is the Step 3 exercise. |
 | `web_search.py` | crewAI tool | `FirecrawlSearchTool` gives the top 5 web results. If `FIRECRAWL_API_KEY` is empty, the project does not use this tool. |
 | `canvas_mcp.py` | MCP server | `MCPServerHTTP` with a bearer token. crewAI finds the canvas tools automatically. |
@@ -124,7 +125,7 @@ deep researcher -> design thinker -> solutions engineer -> product designer -> m
 
 Command: `uv run main.py connect`
 
-1. Register your crew in the **Config** tab of the canvas.
+1. Register your crew in the **Crew** tab of the canvas.
 2. Copy `BOARD_URL`, `CREW_TOKEN`, `CANVAS_MCP_URL` and `WEBHOOK_URL` into `.env`.
 3. Run `uv run main.py connect`.
 

@@ -106,7 +106,8 @@ def step_connect():
         print(run_crew(sys.argv[-1] if len(sys.argv) > 3 else "What should we build?"))
         return
     if not (config.BOARD_URL and config.CREW_TOKEN):
-        sys.exit("Add BOARD_URL and CREW_TOKEN to .env. Copy them from the Config tab of the canvas.")
+        sys.exit("Add BOARD_URL and CREW_TOKEN to .env. Copy them from the Crew tab of the canvas.")
+    build_crew()  # Stops here with "Not built yet" if crew.py is still empty
 
     board = Board(url=config.BOARD_URL, token=config.CREW_TOKEN)
 

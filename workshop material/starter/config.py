@@ -18,7 +18,7 @@ CONTEXT_WINDOW = int(os.getenv("CONTEXT_WINDOW", "200000"))
 TEAM_NAME = os.getenv("TEAM_NAME", "my-team")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
 
-# Canvas platform. Copy these values from the Config tab of the canvas.
+# Canvas platform. Copy these values from the Crew tab of the canvas.
 BOARD_URL = os.getenv("BOARD_URL", "")
 CREW_TOKEN = os.getenv("CREW_TOKEN", "")
 CANVAS_MCP_URL = os.getenv("CANVAS_MCP_URL", "")
