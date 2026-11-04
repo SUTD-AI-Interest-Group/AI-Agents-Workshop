@@ -77,7 +77,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 function EnvCard({ rows, command }: { rows: [string, string, boolean?][]; command: string }) {
   const env = rows.map(([k, v]) => `${k}=${v}`).join('\n')
   return (
-    <figure className="overflow-hidden rounded-[10px] border border-graphite-2 bg-graphite text-graphite-ink">
+    <figure className="hm-cut hm-tone-dark overflow-hidden bg-graphite text-graphite-ink">
       <figcaption className="flex items-center justify-between border-b border-graphite-2 px-3 py-2">
         <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-graphite-muted">.env</span>
         <CopyButton value={env} label=".env values" />
@@ -103,8 +103,8 @@ function EnvCard({ rows, command }: { rows: [string, string, boolean?][]; comman
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 border-b border-border px-4 py-5 last:border-b-0">
-      <MonoLabel>{title}</MonoLabel>
+    <section className="flex flex-col gap-3 border-b-2 border-frame px-4 py-5 last:border-b-0">
+      <h3 className="font-display text-lg leading-none tracking-[0.03em] text-foreground uppercase">{title}</h3>
       {children}
     </section>
   )
@@ -198,7 +198,7 @@ export function ConfigTab({ editor, crews, session }: { editor: Editor | null; c
             </Alert>
           )}
           <div className="flex items-center gap-3">
-            <Button type="submit" disabled={!!busy || !name.trim()}>
+            <Button type="submit" className="hm-cut hm-cut-sm rounded-none px-4 font-display tracking-[0.04em] uppercase" disabled={!!busy || !name.trim()}>
               {busy === 'save' && <LoaderCircle className="animate-spin" />}
               {mine ? 'Save changes' : 'Register crew'}
             </Button>
@@ -206,7 +206,7 @@ export function ConfigTab({ editor, crews, session }: { editor: Editor | null; c
           </div>
         </form>
         {mine && (
-          <div className="flex items-center gap-2 rounded-[6px] border border-border bg-sunken px-3 py-2 text-[13px]">
+          <div className="hm-tone flex items-center gap-2 border-2 border-frame bg-paper px-3 py-2 text-[13px]">
             <StatusDot state={mine.busy ? 'busy' : mine.online ? 'on' : 'off'} />
             <span>{mine.busy ? 'Working on a mention' : mine.online ? 'Listener connected' : 'Listener not running'}</span>
             {mine.areaName && <MonoLabel className="ml-auto truncate normal-case tracking-normal">{mine.areaName}</MonoLabel>}
@@ -244,7 +244,7 @@ export function ConfigTab({ editor, crews, session }: { editor: Editor | null; c
             Crew name to reclaim
           </Label>
           <Input id="reclaim" value={reclaimName} placeholder="Crew name" className="min-w-0 flex-1 font-mono" onChange={(e) => setReclaimName(e.target.value)} />
-          <Button type="submit" variant="outline" disabled={!!busy || !reclaimName.trim()}>
+          <Button type="submit" variant="outline" className="rounded-none border-2 border-frame font-display tracking-[0.04em] uppercase" disabled={!!busy || !reclaimName.trim()}>
             {busy === 'reclaim' && <LoaderCircle className="animate-spin" />}
             Reclaim
           </Button>

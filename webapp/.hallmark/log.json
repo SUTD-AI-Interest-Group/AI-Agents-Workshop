@@ -1,3 +1,20 @@
 [
-  { "date": "2026-11-04", "macrostructure": "App shell (canvas + side panel)", "theme": "Cobalt", "enrichment": "none", "nav": "none", "footer": "none", "brief": "Design Thinking Canvas · tldraw board + crew chat/config panel for SUTD AI Agents Workshop" }
+  {
+    "date": "2026-11-04",
+    "macrostructure": "App shell + full-bleed manga splash",
+    "theme": "custom",
+    "theme_axes": "light / display-condensed-bold / warm",
+    "vibe": "manga ink, screentone, mecha HUD, signal red",
+    "enrichment": "supplied art (manga-cover)",
+    "brief": "AI Agents workshop canvas, manga/Gundam re-theme"
+  },
+  {
+    "date": "2026-11-04",
+    "macrostructure": "App shell (canvas + side panel)",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "nav": "none",
+    "footer": "none",
+    "brief": "Design Thinking Canvas \u00b7 tldraw board + crew chat/config panel for SUTD AI Agents Workshop"
+  }
 ]

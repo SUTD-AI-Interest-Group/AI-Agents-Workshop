@@ -75,7 +75,7 @@ function ThreadQuote({ reply, color }: { reply: ReplyPreview; color?: string }) 
     <button
       type="button"
       onClick={() => jumpTo(reply.id)}
-      className="mb-1 flex w-full min-w-0 items-start gap-1.5 rounded-[6px] bg-sunken px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+      className="hm-tone mb-1.5 flex w-full min-w-0 items-start gap-1.5 border border-dashed border-rule-2 bg-paper px-2 py-1.5 text-left outline-none hover:border-frame focus-visible:ring-2 focus-visible:ring-ring"
       aria-label={`Replying to ${reply.authorName}: ${reply.text}. Jump to message`}
     >
       <CornerUpLeft className="mt-0.5 size-3 flex-none text-muted-foreground" aria-hidden />
@@ -173,8 +173,10 @@ function CrewBody({ m }: { m: ChatMessage }) {
 function Message({ m, editor, crewById, onReply }: { m: ChatMessage; editor: Editor | null; crewById: Map<string, CrewInfo>; onReply(m: ChatMessage): void }) {
   if (m.authorType === 'system')
     return (
-      <li id={`msg-${m.id}`} className="py-1 text-center font-mono text-[11px] text-muted-foreground" role="status">
-        {m.text}
+      <li id={`msg-${m.id}`} className="flex items-center gap-2 py-1 font-mono text-[11px] tracking-[0.04em] text-muted-foreground" role="status">
+        <span aria-hidden className="h-px flex-1 bg-rule" />
+        <span className="max-w-[85%] text-center">{m.text}</span>
+        <span aria-hidden className="h-px flex-1 bg-rule" />
       </li>
     )
   const crew = m.authorType === 'crew'
@@ -183,31 +185,53 @@ function Message({ m, editor, crewById, onReply }: { m: ChatMessage; editor: Edi
     const c = [...crewById.values()].find((x) => x.name === r.authorName)
     return c ? crewColor(c.color) : undefined
   }
+  const body = (
+    <>
+      {m.replyTo && <ThreadQuote reply={m.replyTo} color={quoteColor(m.replyTo)} />}
+      {m.status ? <CrewBody m={m} /> : <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">{m.text}</p>}
+      {m.ref && <RefLink editor={editor} shapeId={m.ref.shapeId} label={m.ref.label} />}
+    </>
+  )
+  const stamp = (
+    <time className="flex-none font-mono text-[10.5px] tracking-[0.04em] text-muted-foreground" dateTime={new Date(m.ts).toISOString()}>
+      {time(m.ts)}
+    </time>
+  )
   return (
-    <li
-      id={`msg-${m.id}`}
-      className="group/msg relative -mx-2 flex flex-col gap-0.5 rounded-[6px] px-2 py-1 transition-colors duration-300 data-[flash=true]:bg-accent-wash"
-    >
-      <div className={cn('flex flex-col gap-0.5', crew && 'border-l-2 pl-3')} style={crew ? { borderColor: color } : undefined}>
-        {m.replyTo && <ThreadQuote reply={m.replyTo} color={quoteColor(m.replyTo)} />}
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="flex min-w-0 items-center gap-1 truncate text-[13px] font-semibold" style={color ? { color } : undefined}>
-            {crew && <Bot className="size-3.5 flex-none" aria-hidden />}
-            {m.authorName}
-          </span>
-          {m.areaName && <MonoLabel className="truncate normal-case tracking-normal">{m.areaName}</MonoLabel>}
-          <time className="ml-auto flex-none font-mono text-[11px] text-muted-foreground" dateTime={new Date(m.ts).toISOString()}>
-            {time(m.ts)}
-          </time>
+    <li id={`msg-${m.id}`} className="group/msg relative -mx-1 px-1 py-0.5 transition-colors duration-300 data-[flash=true]:bg-accent-wash">
+      {crew ? (
+        // Crew: a Gundam-style HUD panel framed in the crew's colour, with a unit tag.
+        <div className="hm-cut p-[1.5px]" style={{ background: color }}>
+          <div className="hm-cut bg-card">
+            <div className="flex min-w-0 items-center gap-2 pr-2">
+              <span className="flex min-w-0 items-center gap-1 truncate px-2 py-0.5 font-mono text-[11px] font-semibold tracking-[0.08em] text-accent-ink uppercase" style={{ background: color }}>
+                <Bot className="size-3.5 flex-none" aria-hidden />
+                {m.authorName}
+              </span>
+              {m.areaName && <MonoLabel className="truncate normal-case tracking-normal">{m.areaName}</MonoLabel>}
+              <span className="ml-auto">{stamp}</span>
+            </div>
+            <div className="flex flex-col gap-1 px-3 pt-1.5 pb-2.5">{body}</div>
+          </div>
         </div>
-        {m.status ? <CrewBody m={m} /> : <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">{m.text}</p>}
-        {m.ref && <RefLink editor={editor} shapeId={m.ref.shapeId} label={m.ref.label} />}
-      </div>
+      ) : (
+        // People: a manga speech bubble with an ink outline and a tail.
+        <div className="flex flex-col gap-1">
+          <div className="hm-bubble rounded-[14px] border-2 border-frame bg-card px-3 py-2">{body}</div>
+          <div className="flex items-baseline gap-2 pl-7">
+            <span className="truncate text-[13px] font-semibold text-foreground">{m.authorName}</span>
+            {stamp}
+          </div>
+        </div>
+      )}
       <button
         type="button"
         onClick={() => onReply(m)}
         aria-label={`Reply to ${m.authorName}`}
-        className="absolute top-1 right-12 inline-flex items-center gap-1 rounded-[6px] border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground opacity-0 shadow-xs outline-none group-hover/msg:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring max-sm:opacity-100"
+        className={cn(
+          'hm-cut hm-cut-sm absolute inline-flex items-center gap-1 bg-frame px-2 py-0.5 font-mono text-[11px] tracking-[0.06em] text-graphite-ink uppercase opacity-0 outline-none group-hover/msg:opacity-100 hover:bg-signal focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring max-sm:opacity-100',
+          crew ? 'top-1 right-16' : 'right-2 bottom-0.5',
+        )}
       >
         <CornerUpLeft className="size-3" aria-hidden />
         Reply
@@ -289,7 +313,7 @@ export function ChatTab({ editor, messages, crews, connected, send }: Props) {
             </p>
           </div>
         ) : (
-          <ol className="flex flex-col gap-3">
+          <ol className="flex flex-col gap-4">
             {messages.map((m) => (
               <Message
                 key={m.id}
@@ -306,7 +330,7 @@ export function ChatTab({ editor, messages, crews, connected, send }: Props) {
         )}
       </div>
 
-      <div className="relative border-t border-border p-3">
+      <div className="relative border-t-2 border-frame p-3">
         {options.length > 0 && (
           <ul role="listbox" aria-label="Mention a crew" className="absolute inset-x-3 bottom-full mb-2 overflow-hidden rounded-[6px] border border-border bg-popover p-1 shadow-sm">
             {options.map((c, i) => (
@@ -383,9 +407,9 @@ export function ChatTab({ editor, messages, crews, connected, send }: Props) {
             disabled={!connected}
             onChange={(e) => (setText(e.target.value), setSel(0))}
             onKeyDown={onKey}
-            className="max-h-40 min-h-[2.75rem] resize-none bg-paper text-sm"
+            className="max-h-40 min-h-[2.75rem] resize-none rounded-[2px] border-2 border-frame bg-card text-sm focus-visible:border-signal"
           />
-          <Button type="button" size="icon" aria-label="Send message" disabled={!connected || !text.trim()} onClick={submit}>
+          <Button type="button" size="icon" aria-label="Send message" className="hm-cut hm-cut-sm size-11 rounded-none" disabled={!connected || !text.trim()} onClick={submit}>
             <SendHorizontal />
           </Button>
         </div>

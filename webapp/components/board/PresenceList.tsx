@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { CrewInfo, OnlineUser } from '@/shared/protocol'
-import { crewColor, MonoLabel, StatusDot } from './primitives'
+import { crewColor, StatusDot } from './primitives'
 
 const OPEN_KEY = 'dtc.presenceOpen'
 
@@ -62,35 +62,34 @@ export function PresenceList({ users, crews, me }: { users: OnlineUser[]; crews:
         onClick={toggle}
         aria-expanded={open}
         aria-controls="presence-cloud"
-        className="flex h-10 w-full items-center gap-3 px-4 text-left outline-none hover:bg-sunken focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="flex h-9 w-full items-center gap-3 bg-graphite px-4 text-left font-mono text-[11px] tracking-[0.1em] text-graphite-muted uppercase outline-none hover:text-graphite-ink focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <span className="flex items-center gap-1.5 text-[13px]">
-          <UsersRound className="size-3.5 text-muted-foreground" aria-hidden />
-          <span className="font-medium tabular-nums">{users.length}</span>
-          <span className="text-muted-foreground">{users.length === 1 ? 'person' : 'people'}</span>
+        <span className="flex items-center gap-1.5">
+          <UsersRound className="size-3.5" aria-hidden />
+          Pilots <span className="text-graphite-ink tabular-nums">{String(users.length).padStart(2, '0')}</span>
         </span>
-        <span className="flex items-center gap-1.5 text-[13px]">
-          <Bot className="size-3.5 text-muted-foreground" aria-hidden />
-          <span className="font-medium tabular-nums">
-            {online}
-            <span className="text-muted-foreground">/{crews.length}</span>
+        <span className="flex items-center gap-1.5">
+          <Bot className="size-3.5" aria-hidden />
+          Crews{' '}
+          <span className="text-graphite-ink tabular-nums">
+            {String(online).padStart(2, '0')}/{String(crews.length).padStart(2, '0')}
           </span>
-          <span className="text-muted-foreground">crews online</span>
+          online
         </span>
         {busy > 0 && (
-          <span className="flex items-center gap-1.5">
-            <StatusDot state="busy" />
-            <MonoLabel className="normal-case tracking-normal">{busy} working</MonoLabel>
+          <span className="flex items-center gap-1.5 text-signal-on-dark">
+            <StatusDot state="busy" className="bg-signal-on-dark" />
+            {busy} working
           </span>
         )}
-        <ChevronDown className={cn('ml-auto size-4 text-muted-foreground transition-transform duration-150', open && 'rotate-180')} aria-hidden />
+        <ChevronDown className={cn('ml-auto size-4 transition-transform duration-150', open && 'rotate-180')} aria-hidden />
         <span className="sr-only">{open ? 'Hide' : 'Show'} everyone on the board</span>
       </button>
 
       {open && (
         <div
           id="presence-cloud"
-          className="grid h-[88px] auto-cols-max grid-flow-col grid-rows-3 items-center gap-x-4 gap-y-0.5 overflow-x-auto overflow-y-hidden px-4 pb-2 [scrollbar-width:thin]"
+          className="hm-tone grid h-[88px] auto-cols-max grid-flow-col grid-rows-3 items-center gap-x-4 gap-y-0.5 overflow-x-auto overflow-y-hidden border-b-2 border-frame bg-paper px-4 py-1 [scrollbar-width:thin]"
           aria-label="Everyone on the board"
         >
           {words.map((w) =>

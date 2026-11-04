@@ -6,9 +6,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-    --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-    --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, "SF Mono", Menlo, monospace;
+    --font-heading: var(--hm-font-display);
+    --font-display: var(--hm-font-display);
+    --font-sans: var(--hm-font-body);
+    --font-mono: var(--hm-font-code);
     --color-paper: var(--hm-paper);
     --color-sunken: var(--hm-sunken);
     --color-rule: var(--hm-rule);
@@ -24,6 +25,8 @@
     --color-signal-on-dark: var(--hm-accent-on-dark);
     --color-warn: var(--hm-warn);
     --color-warn-wash: var(--hm-warn-wash);
+    --color-frame: var(--hm-frame);
+    --color-ink: var(--hm-ink);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -89,7 +92,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.375rem;
+    --radius: 0.125rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -158,3 +161,15 @@ html, body { overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) {
   .hm-breathe { animation: none; opacity: 1; }
 }
+
+/* Hallmark · Mecha-Manga signature moves */
+/* Gundam cut corners: top-left + bottom-right clipped */
+.hm-cut { clip-path: polygon(var(--hm-cut) 0, 100% 0, 100% calc(100% - var(--hm-cut)), calc(100% - var(--hm-cut)) 100%, 0 100%, 0 var(--hm-cut)); }
+.hm-cut-sm { --hm-cut: 6px; }
+/* screentone: halftone dots, the manga shading */
+.hm-tone { background-image: radial-gradient(var(--hm-tone) 1px, transparent 1.3px); background-size: 6px 6px; }
+.hm-tone-dark { background-image: radial-gradient(oklch(94% 0.008 70 / 0.10) 1px, transparent 1.3px); background-size: 6px 6px; }
+/* speech bubble tail for people's messages */
+.hm-bubble { position: relative; }
+.hm-bubble::before { content: ""; position: absolute; left: 14px; bottom: -7px; width: 12px; height: 8px; background: var(--hm-frame); clip-path: polygon(0 0, 100% 0, 15% 100%); }
+.hm-bubble::after { content: ""; position: absolute; left: 16px; bottom: -4.5px; width: 9px; height: 6px; background: var(--hm-surface); clip-path: polygon(0 0, 100% 0, 15% 100%); }
