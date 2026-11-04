@@ -2,3 +2,22 @@
 node_modules/
 .DS_Store
 .playwright-mcp/
+
+# secrets and local settings (never commit)
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# workshop runtime output
+outbox/
+.memory/
+
+# build artifacts
+.wrangler/
+*.tsbuildinfo
