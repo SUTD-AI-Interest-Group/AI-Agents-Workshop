@@ -1,0 +1,15 @@
+[project]
+name = "agents-workshop-solution"
+version = "0.1.0"
+description = "SUTD AI Agents Workshop — crewAI full solution"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "crewai[tools]==1.15.35",
+    "firecrawl-py>=4.0",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+]
+
+[tool.uv]
+package = false
