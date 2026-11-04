@@ -19,7 +19,7 @@ export default {
     const url = new URL(req.url)
     if (url.pathname === '/api/health') return json({ ok: true })
     if (url.pathname === '/api/join' && req.method === 'POST') return join(req, env)
-    if (url.pathname === '/crew/ws') return forward(req, env, null)
+    if (url.pathname === '/crew/ws' || url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) return forward(req, env, null)
     if (['/api/sync', '/api/events', '/api/crews', '/api/crews/reclaim', '/api/mentions/board'].includes(url.pathname)) {
       const session = await getSession(req, env)
       if (!session) return json({ error: 'unauthorized' }, 401)

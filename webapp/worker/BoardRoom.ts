@@ -17,11 +17,12 @@ import {
 import type { Session } from './auth'
 import { ChatStore } from './chat'
 import { CREW_NAME_RE, CrewRegistry, type Crew } from './crews'
-import { areaOf, nearbyTexts } from './boardModel'
-import { snapshotRecords } from './boardWriter'
+import { areaContent, areaOf, listAreas, nearbyTexts } from './boardModel'
+import { BoardWriter, snapshotRecords } from './boardWriter'
+import { handleMcp, type McpHost } from './mcp'
 import { MentionRouter, type MentionInput, type Pending } from './mentions'
 import { parseMentions, shapeText } from '../shared/text'
-import type { FromCrew, ToCrew } from '../shared/protocol'
+import type { FromCrew, MentionPayload, ToCrew } from '../shared/protocol'
 import { hashToken, tokenFromRequest } from './auth'
 import type { Env } from './index'
 
@@ -45,6 +46,10 @@ export class BoardRoom extends DurableObject<Env> {
   protected crewSockets = new Map<string, WebSocket>()
   private lastPong = new Map<string, number>()
   readonly router: MentionRouter
+  readonly writer: BoardWriter
+  /** Crews using the MCP wait_for_mentions fallback: last poll time and undelivered mentions. */
+  private lastPoll = new Map<string, number>()
+  private mailbox = new Map<string, MentionPayload[]>()
   private eventSockets = new Map<WebSocket, Session>()
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -66,6 +71,13 @@ export class BoardRoom extends DurableObject<Env> {
       },
       now: () => Date.now(),
     })
+    this.writer = new BoardWriter(
+      () => this.getRoom(),
+      (crewId, areaId) => {
+        this.crews.update(crewId, { areaId })
+        this.broadcastCrews()
+      },
+    )
   }
 
   getRoom(): TLSocketRoom<TLRecord, SessionMeta> {
@@ -88,6 +100,7 @@ export class BoardRoom extends DurableObject<Env> {
     if (url.pathname === '/api/crews/reclaim' && session && req.method === 'POST') return this.reclaimCrew(req, session)
     if (url.pathname === '/api/mentions/board' && session && req.method === 'POST') return this.boardMention(req, session)
     if (url.pathname === '/crew/ws') return this.connectCrew(req)
+    if (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) return handleMcp(req, this.mcpHost(), await this.crewFromRequest(req))
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 
@@ -224,8 +237,18 @@ export class BoardRoom extends DurableObject<Env> {
     this.router.onReply(crewId, msg)
   }
 
+  private isPolling(crewId: string): boolean {
+    return Date.now() - (this.lastPoll.get(crewId) ?? 0) < 60_000
+  }
+
   private sendToCrew(crewId: string, msg: ToCrew): boolean {
     const ws = this.crewSockets.get(crewId)
+    if (!ws && msg.type === 'mention' && this.isPolling(crewId)) {
+      const box = this.mailbox.get(crewId) ?? []
+      box.push(msg)
+      this.mailbox.set(crewId, box)
+      return true
+    }
     if (!ws) return false
     try {
       ws.send(JSON.stringify(msg))
@@ -304,7 +327,59 @@ export class BoardRoom extends DurableObject<Env> {
   }
 
   isCrewOnline(crewId: string): boolean {
-    return this.crewSockets.has(crewId)
+    return this.crewSockets.has(crewId) || this.isPolling(crewId)
+  }
+
+  // ---- MCP host ----
+
+  private mcpHost(): McpHost {
+    const records = () => snapshotRecords(this.getRoom())
+    return {
+      listAreas: () => listAreas(records()).map((a) => ({ id: a.id, name: a.name })),
+      areaContent: async (crew, area) => {
+        const a = await this.writer.resolveArea(crew, area)
+        return { name: a.name, texts: areaContent(records(), a.id) }
+      },
+      overview: () => {
+        const r = records()
+        return listAreas(r).map((a) => ({ name: a.name, texts: areaContent(r, a.id).slice(0, 10) }))
+      },
+      addNotes: (crew, area, texts, color) => this.writer.addNotes(this.fresh(crew), area, texts, color as never),
+      addText: (crew, area, text) => this.writer.addText(this.fresh(crew), area, text),
+      addSection: (crew, area, title, items) => this.writer.addSection(this.fresh(crew), area, title, items),
+      recentChat: (limit) => this.chat.recent(limit).map((m) => ({ author: m.authorName, text: m.text })),
+      postAsCrew: (crew, text) => this.postAsCrew(crew.id, text),
+      waitForMentions: (crew, timeoutMs) => this.waitForMentions(crew.id, timeoutMs),
+    }
+  }
+
+  /** Re-read a crew so writes see its latest area (a fallback area may have just been created). */
+  private fresh(crew: Crew): Crew {
+    return this.crews.byId(crew.id) ?? crew
+  }
+
+  /** MCP chat post: finishes an in-flight mention if there is one, otherwise a plain crew message. */
+  private postAsCrew(crewId: string, text: string) {
+    const active = this.router.activeId(crewId)
+    if (active) return this.router.onReply(crewId, { type: 'reply', mentionId: active, text, final: true })
+    this.crewSays(crewId, text, { id: '', source: 'chat', text: '', author: '', hop: 0, context: {} })
+  }
+
+  private async waitForMentions(crewId: string, timeoutMs: number): Promise<MentionPayload[]> {
+    const deadline = Date.now() + timeoutMs
+    const wasOnline = this.isCrewOnline(crewId)
+    this.lastPoll.set(crewId, Date.now())
+    if (!wasOnline) this.broadcastCrews()
+    while (Date.now() < deadline) {
+      const box = this.mailbox.get(crewId)
+      if (box?.length) {
+        this.mailbox.delete(crewId)
+        return box
+      }
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    this.lastPoll.set(crewId, Date.now())
+    return []
   }
 
   isCrewBusy(crewId: string): boolean {

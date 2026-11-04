@@ -29,6 +29,10 @@ export class MentionRouter {
     return this.active.has(crewId)
   }
 
+  activeId(crewId: string): string | null {
+    return this.active.get(crewId)?.id ?? null
+  }
+
   deliver(crewId: string, input: MentionInput): void {
     if (input.hop >= HOP_LIMIT) return
     const name = this.deps.crewName(crewId)
