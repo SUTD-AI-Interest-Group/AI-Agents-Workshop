@@ -55,16 +55,24 @@ it('threads a crew answer under the message that mentioned it', async () => {
   human.ws.close()
 })
 
-it('replying to a crew message asks that crew, with the replied-to text as context', async () => {
+it('a thread reply only reaches the crew when it @mentions it, and then carries the replied-to text', async () => {
   const crew = await connect(uniq('Follow'))
   const human = await openEvents('Alice')
   human.ws.send(JSON.stringify({ type: 'chat', text: `@${crew.name} first question` }))
   const m1 = await crew.c.next((m) => m.type === 'mention')
   crew.ws.send(JSON.stringify({ type: 'reply', mentionId: m1.id, text: 'first answer', final: true }))
   const done = await human.c.next((m) => m.type === 'chat_update' && m.message.status === 'done')
-  human.ws.send(JSON.stringify({ type: 'chat', text: 'can you expand on that?', replyTo: done.message.id }))
+
+  // plain thread reply: a comment for people, not sent to the crew
+  human.ws.send(JSON.stringify({ type: 'chat', text: 'nice, thanks', replyTo: done.message.id }))
+  await human.c.next((m) => m.type === 'chat' && m.message.text === 'nice, thanks')
+  await new Promise((r) => setTimeout(r, 150))
+  expect(crew.c.seen.filter((m) => m.type === 'mention')).toEqual([])
+
+  // explicit follow-up
+  human.ws.send(JSON.stringify({ type: 'chat', text: `@${crew.name} can you expand on that?`, replyTo: done.message.id }))
   const m2 = await crew.c.next((m) => m.type === 'mention')
-  expect(m2).toMatchObject({ text: 'can you expand on that?', author: 'Alice', hop: 0 })
+  expect(m2).toMatchObject({ text: `@${crew.name} can you expand on that?`, author: 'Alice', hop: 0 })
   expect(m2.context.replyTo).toEqual({ author: crew.name, text: 'first answer' })
   crew.ws.close()
   human.ws.close()

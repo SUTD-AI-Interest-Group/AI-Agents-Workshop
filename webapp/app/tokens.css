@@ -41,6 +41,8 @@
   /* status */
   --hm-ok: oklch(62% 0.15 155);
   --hm-idle: oklch(78% 0.01 257);
+  --hm-warn: oklch(52% 0.12 65);
+  --hm-warn-wash: oklch(96% 0.035 80);
   --hm-danger: oklch(55% 0.19 27);
 
   --hm-font-body: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;

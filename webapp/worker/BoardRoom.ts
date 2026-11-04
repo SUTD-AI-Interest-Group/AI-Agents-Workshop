@@ -160,10 +160,9 @@ export class BoardRoom extends DurableObject<Env> {
     if (!text) return
     const parent = typeof msg.replyTo === 'string' ? this.chat.get(msg.replyTo) : null
     const posted = this.postChat({ authorType: 'human', authorName: session.name, text, replyTo: parent ? preview(parent) : undefined })
-    // Replying in a crew's thread asks that crew, even without an @mention.
-    const implicit = parent?.authorType === 'crew' && parent.crewId ? [parent.crewId] : []
+    // Only explicit @mentions reach crews; a thread reply gives the mentioned crew the replied-to text as context.
     const replyContext = parent ? { author: parent.authorName, text: parent.text } : undefined
-    this.routeChatMentions(text, session.name, 0, null, preview(posted), implicit, replyContext)
+    this.routeChatMentions(text, session.name, 0, null, preview(posted), [], replyContext)
   }
 
   // ---- mentions ----

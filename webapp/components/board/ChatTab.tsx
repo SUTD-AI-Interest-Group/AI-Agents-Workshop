@@ -2,7 +2,9 @@
 
 import {
   ArrowUpRight,
+  AtSign,
   BookOpen,
+  Check,
   Bot,
   ChevronRight,
   CornerUpLeft,
@@ -24,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, CrewInfo, ProgressItem, ProgressKind, ReplyPreview } from '@/shared/protocol'
+import { parseMentions } from '@/shared/text'
 import { crewColor, MonoLabel, StatusDot } from './primitives'
 
 type Props = {
@@ -265,6 +268,14 @@ export function ChatTab({ editor, messages, crews, connected, send }: Props) {
   }
 
   const replyingToCrew = replyTo?.authorType === 'crew'
+  const replyCrewColor = replyingToCrew ? crewColor(replyTo?.crewId ? crewById.get(replyTo.crewId)?.color : undefined) : undefined
+  // Thread replies reach a crew only when they @mention it: tell people which one they're sending.
+  const followUp = replyingToCrew && replyTo ? parseMentions(text, [replyTo.authorName]).length > 0 : false
+  function addReplyMention() {
+    if (!replyTo) return
+    setText((t) => `@${replyTo.authorName} ${t.trimStart()}`)
+    inputRef.current?.focus()
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -318,24 +329,48 @@ export function ChatTab({ editor, messages, crews, connected, send }: Props) {
           </ul>
         )}
         {replyTo && (
-          <div className="mb-2 flex items-start gap-2 rounded-[6px] border border-border bg-sunken px-2 py-1.5">
-            <CornerUpLeft className="mt-0.5 size-3.5 flex-none text-muted-foreground" aria-hidden />
-            <div className="min-w-0 flex-1 text-xs">
-              <span className="text-muted-foreground">Replying to </span>
-              <span className="font-semibold" style={replyingToCrew ? { color: crewColor(replyTo.crewId ? crewById.get(replyTo.crewId)?.color : undefined) } : undefined}>
-                {replyTo.authorName}
-              </span>
-              {replyingToCrew && <span className="text-muted-foreground">: the crew will answer in this thread</span>}
-              <p className="truncate text-muted-foreground">{replyTo.text || 'working…'}</p>
+          <div className="mb-2 overflow-hidden rounded-[6px] border border-border bg-sunken">
+            <div className="flex items-start gap-2 px-2 py-1.5">
+              <CornerUpLeft className="mt-0.5 size-3.5 flex-none text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1 text-xs">
+                <span className="text-muted-foreground">Replying to </span>
+                <span className="font-semibold" style={replyCrewColor ? { color: replyCrewColor } : undefined}>
+                  {replyTo.authorName}
+                </span>
+                <p className="truncate text-muted-foreground">{replyTo.text || 'working…'}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Cancel reply"
+                onClick={() => setReplyTo(null)}
+                className="rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X className="size-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              aria-label="Cancel reply"
-              onClick={() => setReplyTo(null)}
-              className="rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X className="size-3.5" />
-            </button>
+            {replyingToCrew &&
+              (followUp ? (
+                <p role="status" className="flex items-center gap-1.5 border-t border-border px-2 py-1.5 text-xs text-foreground">
+                  <Check className="size-3.5 flex-none text-ok" aria-hidden />
+                  <span>
+                    <span className="font-semibold" style={{ color: replyCrewColor }}>{replyTo.authorName}</span> will get this as a follow-up and answer in this thread.
+                  </span>
+                </p>
+              ) : (
+                <div role="status" className="flex items-center gap-2 border-t border-border bg-warn-wash px-2 py-1.5 text-xs text-warn">
+                  <AtSign className="size-3.5 flex-none" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    Only people will see this. Mention <span className="font-semibold">@{replyTo.authorName}</span> to ask it a follow-up.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addReplyMention}
+                    className="flex-none rounded-[6px] border border-current/30 bg-card px-1.5 py-0.5 font-medium whitespace-nowrap outline-none hover:bg-paper focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Add @{replyTo.authorName}
+                  </button>
+                </div>
+              ))}
           </div>
         )}
         <div className="flex items-end gap-2">
