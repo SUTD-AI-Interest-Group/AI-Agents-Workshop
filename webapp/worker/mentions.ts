@@ -1,4 +1,6 @@
-import type { FromCrew, MentionPayload, ToCrew } from '../shared/protocol'
+import { PROGRESS_KINDS, type FromCrew, type MentionPayload, type ProgressItem, type ProgressKind, type ToCrew } from '../shared/protocol'
+
+const asKind = (k: unknown): ProgressKind => (PROGRESS_KINDS as readonly unknown[]).includes(k) ? (k as ProgressKind) : 'note'
 
 export const HOP_LIMIT = 3
 export const QUEUE_LIMIT = 3
@@ -19,7 +21,7 @@ export type RouterDeps = {
   /** A mention was handed to the crew: open its in-place chat message. */
   started(crewId: string, m: Pending): void
   /** Progress text for the in-flight mention's message. */
-  progress(crewId: string, text: string, m: Pending): void
+  progress(crewId: string, item: ProgressItem, m: Pending): void
   /** The crew's final answer replaces the working state. */
   finished(crewId: string, text: string, m: Pending): void
   /** The mention ended without an answer (error, timeout, disconnect). */
@@ -72,7 +74,7 @@ export class MentionRouter {
     if (r.type === 'error') return this.end(crewId, () => this.deps.failed(crewId, `Hit an error: ${String(r.message).slice(0, 500)}`, m))
     const text = String(r.text ?? '').trim()
     if (!r.final) {
-      if (text) this.deps.progress(crewId, text, m)
+      if (text) this.deps.progress(crewId, { kind: asKind(r.kind), text: text.slice(0, 500) }, m)
       return
     }
     this.end(crewId, () => this.deps.finished(crewId, text, m))
@@ -82,7 +84,7 @@ export class MentionRouter {
   addProgress(crewId: string, text: string): boolean {
     const m = this.active.get(crewId)
     if (!m) return false
-    this.deps.progress(crewId, text, m)
+    this.deps.progress(crewId, { kind: 'note', text: text.slice(0, 500) }, m)
     return true
   }
 

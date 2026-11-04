@@ -20,7 +20,7 @@ function fakeRouter() {
     crewName: (id) => ({ c1: 'Falcon', c2: 'Owl' })[id] ?? id,
     system: (t) => system.push(t),
     started: (crewId, m: Pending) => events.push(`start ${crewId} ${m.text}`),
-    progress: (crewId, text) => events.push(`progress ${crewId} ${text}`),
+    progress: (crewId, item) => events.push(`progress ${crewId} ${item.kind}:${item.text}`),
     finished: (crewId, text) => events.push(`final ${crewId} ${text}`),
     failed: (crewId, reason) => events.push(`failed ${crewId} ${reason}`),
     thinking: (id, on) => thinking.push([id, on]),
@@ -67,7 +67,9 @@ describe('MentionRouter', () => {
     const f = fakeRouter()
     f.router.deliver('c1', f.m('one'))
     f.router.onReply('c1', { type: 'reply', mentionId: idOf(f), text: 'working', final: false })
-    expect(f.events).toEqual(['start c1 one', 'progress c1 working'])
+    expect(f.events).toEqual(['start c1 one', 'progress c1 note:working'])
+    f.router.onReply('c1', { type: 'reply', mentionId: idOf(f), text: 'web_search', final: false, kind: 'mcp' })
+    expect(f.events.at(-1)).toBe('progress c1 mcp:web_search')
     expect(f.router.isBusy('c1')).toBe(true)
   })
 
@@ -77,7 +79,7 @@ describe('MentionRouter', () => {
     expect(f.router.addProgress('c1', 'via MCP')).toBe(true)
     expect(f.router.isBusy('c1')).toBe(true)
     expect(f.router.addProgress('c2', 'nobody active')).toBe(false)
-    expect(f.events).toEqual(['start c1 one', 'progress c1 via MCP'])
+    expect(f.events).toEqual(['start c1 one', 'progress c1 note:via MCP'])
   })
 
   it('marks the message failed on a crew error and moves on, with no separate notice', () => {
@@ -161,11 +163,19 @@ describe('crew socket + routing', () => {
 
     crew.ws.send(JSON.stringify({ type: 'reply', mentionId: mention.id, text: 'searching…', final: false }))
     const p1 = await human.c.next((m) => m.type === 'chat_update')
-    expect(p1.message).toMatchObject({ id: working.message.id, status: 'working', progress: ['searching…'] })
+    expect(p1.message).toMatchObject({ id: working.message.id, status: 'working', progress: [{ kind: 'note', text: 'searching…' }] })
+    crew.ws.send(JSON.stringify({ type: 'reply', mentionId: mention.id, text: 'Researcher: using web_search', final: false, kind: 'tool' }))
+    crew.ws.send(JSON.stringify({ type: 'reply', mentionId: mention.id, text: 'odd', final: false, kind: 'rm -rf' }))
+    const p3 = await human.c.next((m) => m.type === 'chat_update' && m.message.progress.length === 3)
+    expect(p3.message.progress.slice(1)).toEqual([
+      { kind: 'tool', text: 'Researcher: using web_search' },
+      { kind: 'note', text: 'odd' },
+    ])
 
     crew.ws.send(JSON.stringify({ type: 'reply', mentionId: mention.id, text: 'hello back', final: true }))
     const done = await human.c.next((m) => m.type === 'chat_update' && m.message.status === 'done')
-    expect(done.message).toMatchObject({ id: working.message.id, text: 'hello back', progress: ['searching…'] })
+    expect(done.message).toMatchObject({ id: working.message.id, text: 'hello back' })
+    expect(done.message.progress).toHaveLength(3)
     await human.c.next((m) => m.type === 'thinking' && !m.on)
     // no separate chat messages were created for progress or the final answer
     expect(human.c.seen.filter((m) => m.type === 'chat' && m.message.authorType === 'crew')).toEqual([])
@@ -187,7 +197,7 @@ describe('crew socket + routing', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'post_chat_message', arguments: { text: 'interim finding' } } }),
     })
     expect(r.status).toBe(200)
-    await human.c.next((m) => m.type === 'chat_update' && m.message.progress?.includes('interim finding'))
+    await human.c.next((m) => m.type === 'chat_update' && m.message.progress?.some((p: { text: string }) => p.text === 'interim finding'))
     crew.ws.send(JSON.stringify({ type: 'reply', mentionId: mention.id, text: 'the real answer', final: true }))
     const done = await human.c.next((m) => m.type === 'chat_update' && m.message.status === 'done')
     expect(done.message.text).toBe('the real answer')

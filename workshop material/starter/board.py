@@ -11,6 +11,10 @@
 
     board.run()                   # blocks; reconnects automatically; Ctrl+C to stop
 
+While your handler runs, the listener also forwards what your crew is doing (task and
+agent starts, thinking, tool calls, MCP tool calls, memory and knowledge lookups) from
+crewAI's event bus, so people see live progress under your crew's reply. Nothing to set up.
+
 How it works: the listener opens an *outgoing* WebSocket to the board (so it works on
 any Wi-Fi, no tunnels needed). Whenever someone writes @YourCrew in the chat or on a
 sticky note, the board sends the mention here and your handler runs. One mention is
@@ -31,9 +35,90 @@ from typing import Any, Callable, Optional
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 
+MAX_PROGRESS = 80  # per mention; the board keeps the last 100 anyway
+
 REPLACED = 4001  # another listener connected with the same token
 BAD_TOKEN = 4003  # the token was rejected
 MAX_BACKOFF = 30.0
+
+
+def _short(value: Any, n: int = 80) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def describe_event(event: Any) -> Optional[tuple[str, str]]:
+    """Turn a crewAI event into a (kind, text) progress line, or None to skip it."""
+    kind = getattr(event, "type", "")
+    role = getattr(event, "agent_role", None) or getattr(getattr(event, "agent", None), "role", None)
+    if kind == "tool_usage_started":
+        return "tool", f"{role} → {event.tool_name}" if role else f"Using {event.tool_name}"
+    if kind in ("tool_usage_error", "mcp_tool_execution_failed"):
+        return "error", f"{event.tool_name} failed: {_short(getattr(event, 'error', ''), 120)}"
+    if kind == "mcp_tool_execution_started":
+        return "mcp", f"{getattr(event, 'server_name', 'mcp')} · {event.tool_name}"
+    if kind == "memory_query_started":
+        return "memory", f"Searching memory: {_short(getattr(event, 'query', ''))}"
+    if kind == "memory_retrieval_started":
+        return "memory", f"{role} is recalling memories" if role else "Recalling memories"
+    if kind == "memory_save_started":
+        return "memory", f"{role} saved to memory" if role else "Saved to memory"
+    if kind == "knowledge_search_query_started":
+        return "knowledge", f"{role} searched knowledge" if role else "Searched knowledge"
+    if kind == "agent_reasoning_started":
+        return "thinking", f"{role} is planning" if role else "Planning"
+    if kind == "llm_call_started":
+        return "thinking", f"{role} is thinking" if role else "Thinking"
+    if kind == "agent_execution_started":
+        return "agent", f"{role} started" if role else "Agent started"
+    if kind == "task_started":
+        task = getattr(event, "task", None)
+        name = getattr(task, "name", None) or getattr(task, "description", "")
+        return "task", f"Task: {_short(name)}"
+    return None
+
+
+_EVENT_CLASSES = {
+    "crewai.events.types.tool_usage_events": ["ToolUsageStartedEvent", "ToolUsageErrorEvent"],
+    "crewai.events.types.mcp_events": ["MCPToolExecutionStartedEvent", "MCPToolExecutionFailedEvent"],
+    "crewai.events.types.memory_events": ["MemoryQueryStartedEvent", "MemoryRetrievalStartedEvent", "MemorySaveStartedEvent"],
+    "crewai.events.types.knowledge_events": ["KnowledgeRetrievalStartedEvent"],
+    "crewai.events.types.reasoning_events": ["AgentReasoningStartedEvent"],
+    "crewai.events.types.llm_events": ["LLMCallStartedEvent"],
+    "crewai.events.types.agent_events": ["AgentExecutionStartedEvent"],
+    "crewai.events.types.task_events": ["TaskStartedEvent"],
+}
+_active_board: Optional["Board"] = None
+_listener_installed = False
+
+
+def _install_crewai_listener() -> None:
+    """Subscribe once to crewAI's event bus; events go to the board currently running."""
+    global _listener_installed
+    if _listener_installed:
+        return
+    _listener_installed = True
+    try:
+        import importlib
+
+        from crewai.events import crewai_event_bus
+    except Exception:
+        return  # crewAI not installed: no live progress, everything else still works
+
+    def forward(source: Any, event: Any) -> None:
+        board = _active_board
+        if board is not None:
+            board._on_crew_event(source, event)
+
+    for module_name, names in _EVENT_CLASSES.items():
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
+            continue
+        for name in names:
+            cls = getattr(module, name, None)
+            if cls is not None:
+                crewai_event_bus.on(cls)(forward)
 
 
 class MentionContext:
@@ -98,6 +183,10 @@ class Board:
         self._stop = threading.Event()
         self._jobs: "queue.Queue[Optional[Mention]]" = queue.Queue()
         self._backoff_start = 1.0
+        self._current: Optional[Mention] = None
+        self._progress_lock = threading.Lock()
+        self._last_progress: Optional[tuple[str, str]] = None
+        self._progress_sent = 0
 
     # ---- public API -------------------------------------------------------
 
@@ -110,6 +199,9 @@ class Board:
         """Connect and handle mentions until Ctrl+C (reconnects automatically)."""
         if self._handler is None:
             raise RuntimeError("Register a handler first with @board.on_mention")
+        global _active_board
+        _active_board = self
+        _install_crewai_listener()
         worker = threading.Thread(target=self._work, daemon=True)
         worker.start()
         backoff = self._backoff_start
@@ -189,6 +281,8 @@ class Board:
             m = self._jobs.get()
             if m is None:
                 return
+            with self._progress_lock:
+                self._current, self._last_progress, self._progress_sent = m, None, 0
             try:
                 result = self._handler(m)  # type: ignore[misc]
                 text = "(done)" if result is None else str(getattr(result, "raw", result))
@@ -196,6 +290,26 @@ class Board:
             except Exception as e:
                 traceback.print_exc()
                 self._send({"type": "error", "mentionId": m.id, "message": str(e) or e.__class__.__name__})
+            finally:
+                with self._progress_lock:
+                    self._current = None
+
+    def _on_crew_event(self, source: Any, event: Any) -> None:
+        """crewAI event → typed progress line on the mention being handled (deduped, capped)."""
+        try:
+            line = describe_event(event)
+        except Exception:
+            return
+        if line is None:
+            return
+        with self._progress_lock:
+            m = self._current
+            if m is None or line == self._last_progress or self._progress_sent >= MAX_PROGRESS:
+                return
+            self._last_progress = line
+            self._progress_sent += 1
+        kind, text = line
+        self._send({"type": "reply", "mentionId": m.id, "text": text, "final": False, "kind": kind})
 
     def _send(self, payload: dict) -> bool:
         ws = self._ws

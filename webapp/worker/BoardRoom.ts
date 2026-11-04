@@ -9,6 +9,7 @@ import {
   CHAT_INIT_COUNT,
   CHAT_MAX_LEN,
   CREW_COLORS,
+  PROGRESS_MAX,
   type ChatMessage,
   type ClientEvent,
   type CrewInfo,
@@ -72,7 +73,7 @@ export class BoardRoom extends DurableObject<Env> {
       crewName: (crewId) => this.crews.byId(crewId)?.name ?? 'Crew',
       system: (text) => this.postChat({ authorType: 'system', authorName: 'Board', text }),
       started: (crewId, m) => this.openReply(crewId, m),
-      progress: (_crewId, text, m) => this.updateReply(m, (msg) => ({ progress: [...(msg.progress ?? []), clip(text)] })),
+      progress: (_crewId, item, m) => this.updateReply(m, (msg) => ({ progress: [...(msg.progress ?? []), item].slice(-PROGRESS_MAX) })),
       finished: (crewId, text, m) => {
         const replyId = this.replyMessages.get(m.id) // read before updateReply forgets it
         this.updateReply(m, () => ({ status: 'done', text: clip(text) || '(done)' }))

@@ -1,12 +1,29 @@
 'use client'
 
-import { ArrowUpRight, Bot, ChevronRight, CornerUpLeft, SendHorizontal, X } from 'lucide-react'
+import {
+  ArrowUpRight,
+  BookOpen,
+  Bot,
+  ChevronRight,
+  CornerUpLeft,
+  Database,
+  ListChecks,
+  MessageSquare,
+  Plug,
+  SendHorizontal,
+  Sparkles,
+  TriangleAlert,
+  UserRound,
+  Wrench,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor, TLShapeId } from 'tldraw'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import type { ChatMessage, CrewInfo, ReplyPreview } from '@/shared/protocol'
+import type { ChatMessage, CrewInfo, ProgressItem, ProgressKind, ReplyPreview } from '@/shared/protocol'
 import { crewColor, MonoLabel, StatusDot } from './primitives'
 
 type Props = {
@@ -69,26 +86,58 @@ function ThreadQuote({ reply, color }: { reply: ReplyPreview; color?: string }) 
   )
 }
 
+const KIND: Record<ProgressKind, { icon: LucideIcon; label: string }> = {
+  note: { icon: MessageSquare, label: 'update' },
+  task: { icon: ListChecks, label: 'task' },
+  agent: { icon: UserRound, label: 'agent' },
+  thinking: { icon: Sparkles, label: 'thinking' },
+  tool: { icon: Wrench, label: 'tool' },
+  mcp: { icon: Plug, label: 'MCP' },
+  memory: { icon: Database, label: 'memory' },
+  knowledge: { icon: BookOpen, label: 'knowledge' },
+  error: { icon: TriangleAlert, label: 'error' },
+}
+
+/** Older messages stored progress as plain strings. */
+const asItem = (p: ProgressItem | string): ProgressItem => (typeof p === 'string' ? { kind: 'note', text: p } : p)
+
+function ProgressList({ items, live }: { items: ProgressItem[]; live?: boolean }) {
+  return (
+    <ul className="flex flex-col gap-1 border-l border-border pl-2">
+      {items.map((p, i) => {
+        const { icon: Icon, label } = KIND[p.kind] ?? KIND.note
+        const latest = live && i === items.length - 1
+        return (
+          <li key={i} className={cn('flex min-w-0 items-start gap-1.5 text-[12.5px] leading-snug', p.kind === 'error' ? 'text-destructive' : latest ? 'text-foreground' : 'text-muted-foreground')}>
+            <Icon className="mt-[2px] size-3 flex-none" aria-label={label} />
+            <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{p.text}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** "12 steps · 3 tool · 2 memory" — the collapsed summary. */
+function summarise(items: ProgressItem[]) {
+  const counts = new Map<ProgressKind, number>()
+  for (const p of items) counts.set(p.kind, (counts.get(p.kind) ?? 0) + 1)
+  const parts = (['tool', 'mcp', 'memory', 'knowledge', 'error'] as ProgressKind[]).filter((k) => counts.get(k)).map((k) => `${counts.get(k)} ${KIND[k].label}`)
+  return [`${items.length} ${items.length === 1 ? 'step' : 'steps'}`, ...parts].join(' · ')
+}
+
 /** A crew's reply to a mention: working (live progress) → answer, with the progress folded away. */
 function CrewBody({ m }: { m: ChatMessage }) {
   const [open, setOpen] = useState(false)
-  const progress = m.progress ?? []
+  const progress = (m.progress ?? []).map(asItem)
   if (m.status === 'working')
     return (
-      <div className="flex flex-col gap-1" aria-live="polite">
+      <div className="flex flex-col gap-1.5" aria-live="polite">
         <span className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
           <StatusDot state="busy" />
-          Working on it
+          Working on it{progress.length ? ` · ${progress.length} ${progress.length === 1 ? 'step' : 'steps'}` : ''}
         </span>
-        {progress.length > 0 && (
-          <ul className="flex flex-col gap-0.5 border-l border-border pl-2 text-[13px] text-muted-foreground">
-            {progress.map((p, i) => (
-              <li key={i} className={cn('whitespace-pre-wrap [overflow-wrap:anywhere]', i === progress.length - 1 && 'text-foreground')}>
-                {p}
-              </li>
-            ))}
-          </ul>
-        )}
+        {progress.length > 0 && <ProgressList items={progress.slice(-5)} live />}
       </div>
     )
   return (
@@ -102,16 +151,12 @@ function CrewBody({ m }: { m: ChatMessage }) {
             className="inline-flex items-center gap-1 rounded-sm font-mono text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronRight className={cn('size-3 transition-transform duration-150', open && 'rotate-90')} aria-hidden />
-            {progress.length} progress {progress.length === 1 ? 'update' : 'updates'}
+            {summarise(progress)}
           </button>
           {open && (
-            <ul className="mt-1 flex flex-col gap-0.5 border-l border-border pl-2 text-[13px] text-muted-foreground">
-              {progress.map((p, i) => (
-                <li key={i} className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-                  {p}
-                </li>
-              ))}
-            </ul>
+            <div className="mt-1 max-h-60 overflow-y-auto">
+              <ProgressList items={progress} />
+            </div>
           )}
         </div>
       )}

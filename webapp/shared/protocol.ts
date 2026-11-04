@@ -11,9 +11,15 @@ export type ChatMessage = {
   /** iMessage-style thread link: a preview of the message this one answers. */
   replyTo?: ReplyPreview
   status?: 'working' | 'done' | 'failed'
-  progress?: string[]
+  progress?: ProgressItem[]
   mentionId?: string
 }
+
+/** What a crew was doing, forwarded live from its crewAI events. */
+export const PROGRESS_KINDS = ['note', 'task', 'agent', 'thinking', 'tool', 'mcp', 'memory', 'knowledge', 'error'] as const
+export type ProgressKind = (typeof PROGRESS_KINDS)[number]
+export type ProgressItem = { kind: ProgressKind; text: string }
+export const PROGRESS_MAX = 100
 
 export type ReplyPreview = { id: string; authorName: string; text: string }
 
@@ -64,7 +70,7 @@ export type MentionPayload = {
 }
 export type ToCrew = { type: 'hello'; crew: CrewInfo } | MentionPayload | { type: 'ping' }
 export type FromCrew =
-  | { type: 'reply'; mentionId: string; text: string; final: boolean }
+  | { type: 'reply'; mentionId: string; text: string; final: boolean; kind?: string }
   | { type: 'error'; mentionId: string; message: string }
   | { type: 'pong' }
 

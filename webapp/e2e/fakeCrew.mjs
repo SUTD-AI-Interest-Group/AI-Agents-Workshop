@@ -10,8 +10,18 @@ ws.on('message', (raw) => {
   if (m.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }))
   if (m.type === 'mention') {
     console.log(`mention [${m.source}] ${m.text}`)
-    ws.send(JSON.stringify({ type: 'reply', mentionId: m.id, text: 'thinking...', final: false }))
-    setTimeout(() => ws.send(JSON.stringify({ type: 'reply', mentionId: m.id, text: prefix + m.text, final: true })), 300)
+    const steps = [
+      ['task', 'Task: Research the brief'],
+      ['agent', 'Researcher started'],
+      ['memory', 'Searching memory: ' + m.text.slice(0, 40)],
+      ['thinking', 'Researcher is thinking'],
+      ['tool', 'Researcher → web_search'],
+      ['mcp', 'canvas · get_area_content'],
+    ]
+    steps.forEach(([kind, text], i) =>
+      setTimeout(() => ws.send(JSON.stringify({ type: 'reply', mentionId: m.id, text, final: false, kind })), 120 * (i + 1)),
+    )
+    setTimeout(() => ws.send(JSON.stringify({ type: 'reply', mentionId: m.id, text: prefix + m.text, final: true })), 120 * (steps.length + 2))
   }
 })
 ws.on('close', (code) => {

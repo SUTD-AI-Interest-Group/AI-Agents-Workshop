@@ -189,3 +189,71 @@ def test_url_conversion():
     mod = load_board()
     assert mod.Board(url="https://x.workers.dev/", token="t").ws_url == "wss://x.workers.dev/crew/ws"
     assert mod.Board(url="http://localhost:8787", token="t").ws_url == "ws://localhost:8787/crew/ws"
+
+
+class Ev:
+    """Stand-in for a crewAI event: just a `type` string plus fields."""
+
+    def __init__(self, type, **fields):
+        self.type = type
+        self.__dict__.update(fields)
+
+
+class Agent:
+    def __init__(self, role):
+        self.role = role
+
+
+class Task:
+    def __init__(self, name=None, description=""):
+        self.name = name
+        self.description = description
+
+
+def test_describe_event_maps_crewai_events_to_progress():
+    d = load_board().describe_event
+    assert d(Ev("tool_usage_started", tool_name="web_search", agent_role="Researcher")) == ("tool", "Researcher → web_search")
+    assert d(Ev("mcp_tool_execution_started", tool_name="add_sticky_note", server_name="canvas", agent_role=None)) == ("mcp", "canvas · add_sticky_note")
+    assert d(Ev("memory_query_started", query="lunch queues interviews", agent_role="Researcher")) == ("memory", "Searching memory: lunch queues interviews")
+    assert d(Ev("memory_save_started", agent_role="Writer")) == ("memory", "Writer saved to memory")
+    assert d(Ev("knowledge_search_query_started", agent_role="Researcher")) == ("knowledge", "Researcher searched knowledge")
+    assert d(Ev("agent_reasoning_started", agent_role="Planner")) == ("thinking", "Planner is planning")
+    assert d(Ev("llm_call_started", agent_role="Writer")) == ("thinking", "Writer is thinking")
+    assert d(Ev("agent_execution_started", agent=Agent("Analyst"))) == ("agent", "Analyst started")
+    assert d(Ev("task_started", task=Task(name="Research brief"))) == ("task", "Task: Research brief")
+    assert d(Ev("tool_usage_error", tool_name="web_search", agent_role="Researcher", error="429")) == ("error", "web_search failed: 429")
+    assert d(Ev("llm_stream_chunk")) is None
+
+
+def test_crew_events_become_typed_progress_for_the_current_mention_only():
+    def on_connect(srv, ws, n):
+        ws.send(json.dumps(HELLO))
+        ws.send(json.dumps(mention()))
+        srv.pump(ws)
+
+    srv = FakeServer(on_connect)
+    mod = load_board()
+    board = mod.Board(url=srv.url, token="t")
+    board._on_crew_event(None, Ev("tool_usage_started", tool_name="early", agent_role="X"))  # no mention yet: ignored
+
+    @board.on_mention
+    def handle(m):
+        board._on_crew_event(None, Ev("tool_usage_started", tool_name="web_search", agent_role="Researcher"))
+        board._on_crew_event(None, Ev("llm_call_started", agent_role="Writer"))
+        board._on_crew_event(None, Ev("llm_call_started", agent_role="Writer"))  # duplicate: dropped
+        board._on_crew_event(None, Ev("memory_query_started", query="q", agent_role="Writer"))
+        return "done"
+
+    run_in_thread(board)
+    got = [srv.next() for _ in range(4)]
+    assert got[:3] == [
+        {"type": "reply", "mentionId": "m1", "text": "Researcher → web_search", "final": False, "kind": "tool"},
+        {"type": "reply", "mentionId": "m1", "text": "Writer is thinking", "final": False, "kind": "thinking"},
+        {"type": "reply", "mentionId": "m1", "text": "Searching memory: q", "final": False, "kind": "memory"},
+    ]
+    assert got[3]["final"] is True
+    board._on_crew_event(None, Ev("tool_usage_started", tool_name="late", agent_role="X"))  # after: ignored
+    with pytest.raises(queue.Empty):
+        srv.next(timeout=0.3)
+    board.stop()
+    srv.close()
