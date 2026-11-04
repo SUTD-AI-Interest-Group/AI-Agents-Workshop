@@ -8,6 +8,7 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   CHAT_INIT_COUNT,
   CHAT_MAX_LEN,
+  CREW_COLORS,
   type ChatMessage,
   type ClientEvent,
   type CrewInfo,
@@ -21,6 +22,11 @@ import { areaContent, areaOf, listAreas, nearbyTexts } from './boardModel'
 import { BoardWriter, snapshotRecords } from './boardWriter'
 import { handleMcp, type McpHost } from './mcp'
 import { MentionRouter, type MentionInput, type Pending } from './mentions'
+
+const clip = (t: string) => t.slice(0, CHAT_MAX_LEN)
+/** Stable colour for crews registered before colours existed. */
+const colorFor = (id: string) => [...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % CREW_COLORS
+const preview = (m: ChatMessage) => ({ id: m.id, authorName: m.authorName, text: (m.text || '…').slice(0, 140) })
 import { parseMentions, shapeText } from '../shared/text'
 import type { FromCrew, MentionPayload, ToCrew } from '../shared/protocol'
 import { hashToken, tokenFromRequest } from './auth'
@@ -65,7 +71,16 @@ export class BoardRoom extends DurableObject<Env> {
       isOnline: (crewId) => this.isCrewOnline(crewId),
       crewName: (crewId) => this.crews.byId(crewId)?.name ?? 'Crew',
       system: (text) => this.postChat({ authorType: 'system', authorName: 'Board', text }),
-      crewSays: (crewId, text, m) => this.crewSays(crewId, text, m),
+      started: (crewId, m) => this.openReply(crewId, m),
+      progress: (_crewId, text, m) => this.updateReply(m, (msg) => ({ progress: [...(msg.progress ?? []), clip(text)] })),
+      finished: (crewId, text, m) => {
+        const replyId = this.replyMessages.get(m.id) // read before updateReply forgets it
+        this.updateReply(m, () => ({ status: 'done', text: clip(text) || '(done)' }))
+        const crew = this.crews.byId(crewId)
+        const reply = replyId ? this.chat.get(replyId) : null
+        if (crew && text) this.routeChatMentions(clip(text), crew.name, m.hop + 1, crewId, reply ? preview(reply) : undefined)
+      },
+      failed: (_crewId, reason, m) => this.updateReply(m, () => ({ status: 'failed', text: reason })),
       thinking: (crewId, on) => {
         this.broadcast({ type: 'thinking', crewId, on })
         this.broadcastCrews()
@@ -142,8 +157,12 @@ export class BoardRoom extends DurableObject<Env> {
     if (msg.type !== 'chat' || typeof msg.text !== 'string') return
     const text = msg.text.trim().slice(0, CHAT_MAX_LEN)
     if (!text) return
-    this.postChat({ authorType: 'human', authorName: session.name, text })
-    this.routeChatMentions(text, session.name, 0, null)
+    const parent = typeof msg.replyTo === 'string' ? this.chat.get(msg.replyTo) : null
+    const posted = this.postChat({ authorType: 'human', authorName: session.name, text, replyTo: parent ? preview(parent) : undefined })
+    // Replying in a crew's thread asks that crew, even without an @mention.
+    const implicit = parent?.authorType === 'crew' && parent.crewId ? [parent.crewId] : []
+    const replyContext = parent ? { author: parent.authorName, text: parent.text } : undefined
+    this.routeChatMentions(text, session.name, 0, null, preview(posted), implicit, replyContext)
   }
 
   // ---- mentions ----
@@ -152,46 +171,86 @@ export class BoardRoom extends DurableObject<Env> {
     return this.chat.recent(20).map((m) => ({ author: m.authorName, text: m.text }))
   }
 
-  private routeChatMentions(text: string, author: string, hop: number, authorCrewId: string | null) {
-    const names = this.crews.all()
-    for (const name of parseMentions(text, names.map((c) => c.name))) {
-      const crew = names.find((c) => c.name === name)!
-      if (crew.id === authorCrewId) continue
-      this.router.deliver(crew.id, { source: 'chat', text, author, hop, context: { recentChat: this.recentChatContext() } })
+  private routeChatMentions(
+    text: string,
+    author: string,
+    hop: number,
+    authorCrewId: string | null,
+    origin?: { id: string; authorName: string; text: string },
+    implicitCrewIds: string[] = [],
+    replyTo?: { author: string; text: string },
+  ) {
+    const crews = this.crews.all()
+    const targets = new Set(implicitCrewIds)
+    for (const name of parseMentions(text, crews.map((c) => c.name))) targets.add(crews.find((c) => c.name === name)!.id)
+    for (const crewId of targets) {
+      if (crewId === authorCrewId || !crews.some((c) => c.id === crewId)) continue
+      this.router.deliver(crewId, { source: 'chat', text, author, hop, origin, context: { recentChat: this.recentChatContext(), replyTo } })
     }
   }
 
-  private crewSays(crewId: string, text: string, m: Pending) {
+  /** mention id → chat message id of its in-place reply (in memory, like the router). */
+  private replyMessages = new Map<string, string>()
+
+  /** Open the crew's in-place reply message for a mention, in the 'working' state. */
+  private openReply(crewId: string, m: Pending) {
     const crew = this.crews.byId(crewId)
     if (!crew) return
-    const info = this.crewInfo(crew)
     const ref = m.source === 'board' && m.shapeId ? { shapeId: m.shapeId, label: m.text.slice(0, 60) } : undefined
-    this.postChat({ authorType: 'crew', authorName: crew.name, crewId, areaName: info.areaName ?? undefined, text, ref })
-    this.routeChatMentions(text, crew.name, m.hop + 1, crewId)
+    const msg = this.postChat({
+      authorType: 'crew', authorName: crew.name, crewId, areaName: this.crewInfo(crew).areaName ?? undefined,
+      text: '', ref, status: 'working', progress: [], mentionId: m.id, replyTo: m.origin,
+    })
+    this.replyMessages.set(m.id, msg.id)
+  }
+
+  private updateReply(m: Pending, patch: (msg: ChatMessage) => Partial<ChatMessage>) {
+    const id = this.replyMessages.get(m.id)
+    const message = id ? this.chat.update(id, patch) : null
+    if (message) this.broadcast({ type: 'chat_update', message })
+    if (message && message.status !== 'working') this.replyMessages.delete(m.id)
+  }
+
+  /** A plain crew message (webhook notices, MCP posts outside a mention). */
+  private crewMessage(crewId: string, text: string, hop: number) {
+    const crew = this.crews.byId(crewId)
+    if (!crew) return
+    this.postChat({ authorType: 'crew', authorName: crew.name, crewId, areaName: this.crewInfo(crew).areaName ?? undefined, text: clip(text) })
+    this.routeChatMentions(clip(text), crew.name, hop, crewId)
   }
 
   private async boardMention(req: Request, session: Session): Promise<Response> {
-    const body = (await req.json().catch(() => ({}))) as { shapeId?: unknown }
+    const body = (await req.json().catch(() => ({}))) as { shapeId?: unknown; text?: unknown }
     const shapeId = String(body.shapeId ?? '')
-    const records = snapshotRecords(this.getRoom())
+    const clientText = typeof body.text === 'string' ? body.text.trim().slice(0, CHAT_MAX_LEN) : null
+    // The last keystrokes travel on the sync socket and can land after this request: give them a moment.
+    let records = snapshotRecords(this.getRoom())
+    for (let i = 0; clientText !== null && i < 5; i++) {
+      const s = records.find((r) => r.id === shapeId && r.typeName === 'shape')
+      if (s && shapeText(s as never).trim() === clientText) break
+      await new Promise((r) => setTimeout(r, 100))
+      records = snapshotRecords(this.getRoom())
+    }
     const shape = records.find((r) => r.id === shapeId && r.typeName === 'shape')
     if (!shape) return Response.json({ error: 'not_found' }, { status: 404 })
-    const text = shapeText(shape as never).trim()
+    const text = clientText ?? shapeText(shape as never).trim()
     const crews = this.crews.all()
     const textHash = await hashToken(text)
     const area = areaOf(records, shapeId)
     const delivered: string[] = []
     for (const name of parseMentions(text, crews.map((c) => c.name))) {
       const crew = crews.find((c) => c.name === name)!
-      const fresh = this.ctx.storage.sql
-        .exec('INSERT OR IGNORE INTO board_mentions (shape_id, crew_id, text_hash) VALUES (?, ?, ?) RETURNING 1', shapeId, crew.id, textHash)
+      const seen = this.ctx.storage.sql
+        .exec('SELECT 1 FROM board_mentions WHERE shape_id = ? AND crew_id = ? AND text_hash = ?', shapeId, crew.id, textHash)
         .toArray().length
-      if (!fresh) continue
+      if (seen) continue
       const input: MentionInput = {
         source: 'board', text, author: session.name, hop: 0, shapeId,
         context: { area: area ? { id: area.id, name: area.name } : undefined, nearby: nearbyTexts(records, shapeId).slice(0, 20) },
       }
-      this.router.deliver(crew.id, input)
+      // Only remember mentions the crew actually took, so an offline/busy crew can be retried.
+      if (!this.router.deliver(crew.id, input)) continue
+      this.ctx.storage.sql.exec('INSERT OR IGNORE INTO board_mentions (shape_id, crew_id, text_hash) VALUES (?, ?, ?)', shapeId, crew.id, textHash)
       delivered.push(name)
     }
     return Response.json({ delivered })
@@ -275,7 +334,19 @@ export class BoardRoom extends DurableObject<Env> {
       } else this.sendToCrew(crewId, { type: 'ping' })
     }
     this.router.tick()
-    if (this.crewSockets.size) await this.ctx.storage.setAlarm(now + 30_000)
+    let pollersChanged = false
+    for (const [crewId, t] of [...this.lastPoll]) {
+      if (now - t >= 60_000) {
+        this.lastPoll.delete(crewId)
+        this.mailbox.delete(crewId)
+        if (!this.crewSockets.has(crewId)) {
+          this.router.onDisconnect(crewId)
+          pollersChanged = true
+        }
+      }
+    }
+    if (pollersChanged) this.broadcastCrews()
+    if (this.crewSockets.size || this.lastPoll.size || this.router.hasActive()) await this.ctx.storage.setAlarm(now + 30_000)
   }
 
   postChat(m: Omit<ChatMessage, 'id' | 'ts'>): ChatMessage {
@@ -317,6 +388,7 @@ export class BoardRoom extends DurableObject<Env> {
       ownerUserId: c.ownerUserId,
       online: this.isCrewOnline(c.id),
       busy: this.isCrewBusy(c.id),
+      color: c.color ?? colorFor(c.id),
     }
   }
 
@@ -388,15 +460,20 @@ export class BoardRoom extends DurableObject<Env> {
 
   /** MCP chat post: finishes an in-flight mention if there is one, otherwise a plain crew message. */
   private postAsCrew(crewId: string, text: string) {
-    const active = this.router.activeId(crewId)
-    if (active) return this.router.onReply(crewId, { type: 'reply', mentionId: active, text, final: true })
-    this.crewSays(crewId, text, { id: '', source: 'chat', text: '', author: '', hop: 0, context: {} })
+    // With a live listener, the listener's return value is the answer: MCP posts are progress on the same message.
+    if (this.crewSockets.has(crewId)) {
+      if (!this.router.addProgress(crewId, text)) this.crewMessage(crewId, text, 1)
+      return
+    }
+    // A polling crew has no listener: its chat post is the final answer to the in-flight mention.
+    if (!this.router.finishActive(crewId, text)) this.crewMessage(crewId, text, 1)
   }
 
   private async waitForMentions(crewId: string, timeoutMs: number): Promise<MentionPayload[]> {
     const deadline = Date.now() + timeoutMs
     const wasOnline = this.isCrewOnline(crewId)
     this.lastPoll.set(crewId, Date.now())
+    await this.ensureAlarm()
     if (!wasOnline) this.broadcastCrews()
     while (Date.now() < deadline) {
       const box = this.mailbox.get(crewId)
@@ -445,6 +522,7 @@ export class BoardRoom extends DurableObject<Env> {
     if (!crew) return Response.json({ error: 'not_found' }, { status: 404 })
     const token = await this.crews.rotateToken(crew.id, session.userId)
     this.closeCrewSocket(crew.id, 4001, 'replaced')
+    this.router.onDisconnect(crew.id)
     this.broadcastCrews()
     return Response.json({ crew: this.crewInfo(this.crews.byId(crew.id)!), token })
   }

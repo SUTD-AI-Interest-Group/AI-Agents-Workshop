@@ -3,7 +3,7 @@
 import { Bot } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { CrewInfo, OnlineUser } from '@/shared/protocol'
-import { MonoLabel, StatusDot } from './primitives'
+import { crewColor, MonoLabel, StatusDot } from './primitives'
 
 export function PresenceList({ users, crews, me }: { users: OnlineUser[]; crews: CrewInfo[]; me: string }) {
   const online = crews.filter((c) => c.online).length
@@ -30,8 +30,10 @@ export function PresenceList({ users, crews, me }: { users: OnlineUser[]; crews:
             <Tooltip>
               <TooltipTrigger className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <StatusDot state={c.busy ? 'busy' : c.online ? 'on' : 'off'} />
-                <Bot className="size-3.5 text-muted-foreground" aria-hidden />
-                <span className={c.online ? 'text-foreground' : 'text-muted-foreground'}>{c.name}</span>
+                <Bot className="size-3.5" style={{ color: crewColor(c.color) }} aria-hidden />
+                <span className={c.online ? 'font-medium' : 'text-muted-foreground'} style={c.online ? { color: crewColor(c.color) } : undefined}>
+                  {c.name}
+                </span>
               </TooltipTrigger>
               <TooltipContent>
                 {c.busy ? 'Working on a mention' : c.online ? 'Listener connected' : 'Offline — mentions won’t be delivered'}

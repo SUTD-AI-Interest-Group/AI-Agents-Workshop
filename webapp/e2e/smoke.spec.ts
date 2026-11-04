@@ -3,7 +3,9 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 
 const PIN = process.env.BOARD_PIN ?? '123456'
 const API = process.env.API_ORIGIN ?? process.env.BASE_URL ?? 'http://localhost:8787'
-const crewName = `Smoke${Date.now().toString(36).slice(-6)}`
+const run = Date.now().toString(36).slice(-6)
+const crewName = `Smoke${run}`
+const hello = `hello from alice ${run}`
 
 async function join(browser: Browser, name: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
@@ -27,9 +29,9 @@ test('two people share a canvas, chat, and a crew answers a mention', async ({ b
   await expect.poll(() => bob.evaluate(() => (window as any).editor.getCurrentPageShapes().filter((s: any) => s.type === 'geo').length)).toBeGreaterThan(0)
 
   // shared chat
-  await alice.getByLabel('Message everyone').fill('hello from alice')
+  await alice.getByLabel('Message everyone').fill(hello)
   await alice.getByLabel('Message everyone').press('Enter')
-  await expect(bob.getByText('hello from alice')).toBeVisible()
+  await expect(bob.getByText(hello)).toBeVisible()
 
   // register a crew and connect a fake listener with its token
   await alice.getByRole('tab', { name: 'Crew' }).click()

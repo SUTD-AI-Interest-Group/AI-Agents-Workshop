@@ -26,6 +26,18 @@
   --hm-graphite-muted: oklch(68% 0.015 257);
   --hm-accent-on-dark: oklch(76% 0.13 256);
 
+  /* crew identities — one stable hue per crew, all at reading contrast on paper (L 50%) */
+  --hm-crew-0: oklch(50% 0.17 27);
+  --hm-crew-1: oklch(52% 0.14 55);
+  --hm-crew-2: oklch(50% 0.11 90);
+  --hm-crew-3: oklch(50% 0.14 145);
+  --hm-crew-4: oklch(50% 0.1 185);
+  --hm-crew-5: oklch(50% 0.12 220);
+  --hm-crew-6: oklch(50% 0.19 262);
+  --hm-crew-7: oklch(50% 0.19 295);
+  --hm-crew-8: oklch(50% 0.19 330);
+  --hm-crew-9: oklch(50% 0.17 358);
+
   /* status */
   --hm-ok: oklch(62% 0.15 155);
   --hm-idle: oklch(78% 0.01 257);

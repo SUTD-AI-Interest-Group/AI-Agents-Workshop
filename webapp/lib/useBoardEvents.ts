@@ -10,7 +10,7 @@ export type BoardEvents = {
   crews: CrewInfo[]
   users: OnlineUser[]
   thinking: Set<string>
-  send(text: string): boolean
+  send(text: string, replyTo?: string): boolean
 }
 
 /** Keeps one events socket open (with backoff reconnect) and mirrors chat, crews, users and thinking state. */
@@ -46,6 +46,9 @@ export function useBoardEvents(token: string): BoardEvents {
           case 'chat':
             setMessages((m) => [...m, ev.message])
             break
+          case 'chat_update':
+            setMessages((m) => m.map((x) => (x.id === ev.message.id ? ev.message : x)))
+            break
           case 'crews':
             setCrews(ev.crews)
             break
@@ -77,10 +80,10 @@ export function useBoardEvents(token: string): BoardEvents {
     }
   }, [token])
 
-  const send = useCallback((text: string) => {
+  const send = useCallback((text: string, replyTo?: string) => {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN || !text.trim()) return false
-    ws.send(JSON.stringify({ type: 'chat', text }))
+    ws.send(JSON.stringify({ type: 'chat', text, replyTo }))
     return true
   }, [])
 

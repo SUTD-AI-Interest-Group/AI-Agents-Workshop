@@ -130,10 +130,23 @@ describe('MCP server', () => {
     human.ws.send(JSON.stringify({ type: 'chat', text: `@${name} are you there?` }))
     const r = await pending
     expect(text(r)).toContain('are you there?')
-    // replying via post_chat_message finishes the mention
+    // a polling crew has no socket, so post_chat_message is its final answer
     await call(token, 'post_chat_message', { text: 'yes' })
+    const done = await human.c.next((m) => m.type === 'chat_update' && m.message.status === 'done')
+    expect(done.message.text).toBe('yes')
     await human.c.next((m) => m.type === 'thinking' && !m.on)
     human.ws.close()
+  })
+
+  it('schedules the housekeeping alarm for polling crews so stuck mentions can time out', async () => {
+    await runInDurableObject(roomStub(), async (_i: BoardRoom, state) => {
+      await state.storage.deleteAlarm()
+    })
+    const { token } = await registerCrew(uniq('Alarm'))
+    await call(token, 'wait_for_mentions', { timeout_seconds: 1 })
+    await runInDurableObject(roomStub(), async (_i: BoardRoom, state) => {
+      expect(await state.storage.getAlarm()).not.toBeNull()
+    })
   })
 
   it('a crew that never polled and has no socket gets an offline notice', async () => {

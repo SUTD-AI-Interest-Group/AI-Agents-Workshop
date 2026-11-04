@@ -20,3 +20,6 @@ export function StatusDot({ state, className }: { state: 'on' | 'off' | 'busy'; 
     />
   )
 }
+
+/** The crew's stable identity colour, as a token reference. */
+export const crewColor = (i: number | undefined) => `var(--hm-crew-${((i ?? 6) % 10 + 10) % 10})`
