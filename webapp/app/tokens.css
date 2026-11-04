@@ -1,0 +1,67 @@
+/* Hallmark · genre: custom (bespoke-tuned) · macrostructure: App shell (canvas + side panel) + full-bleed manga splash
+ * theme: custom "Mecha-Manga" · vibe: "manga ink, screentone, mecha HUD, signal red"
+ * paper oklch(97.5% 0.008 70) · accent oklch(56% 0.19 28) signal-red · display Anton + body Geist + HUD Geist Mono
+ * axes: paper-band light · display-style display-condensed-bold · accent-hue warm
+ */
+:root {
+  /* manga paper + ink — warm off-white page, near-black ink */
+  --hm-paper: oklch(97.5% 0.008 70);
+  --hm-surface: oklch(99% 0.005 70);
+  --hm-sunken: oklch(94.5% 0.01 70);
+  --hm-ink: oklch(17% 0.012 30);
+  --hm-ink-2: oklch(30% 0.012 30);
+  --hm-muted: oklch(46% 0.014 30);
+  --hm-rule: oklch(82% 0.01 50);
+  --hm-rule-2: oklch(70% 0.012 40);
+  /* the manga panel frame: thick ink border */
+  --hm-frame: oklch(17% 0.012 30);
+
+  /* the one signal: jacket / drone-eye red */
+  --hm-accent: oklch(56% 0.19 28);
+  --hm-accent-hover: oklch(50% 0.19 28);
+  --hm-accent-ink: oklch(98.5% 0.006 70);
+  --hm-accent-wash: oklch(94% 0.03 28);
+
+  /* ink panels: the splash and the .env HUD card */
+  --hm-graphite: oklch(15% 0.01 30);
+  --hm-graphite-2: oklch(27% 0.012 30);
+  --hm-graphite-ink: oklch(94% 0.008 70);
+  --hm-graphite-muted: oklch(68% 0.012 50);
+  --hm-accent-on-dark: oklch(70% 0.17 28);
+
+  /* screentone dot colour */
+  --hm-tone: oklch(17% 0.012 30 / 0.16);
+
+  /* crew identities — one stable hue per crew, all at reading contrast on paper (L 50%) */
+  --hm-crew-0: oklch(50% 0.17 27);
+  --hm-crew-1: oklch(52% 0.14 55);
+  --hm-crew-2: oklch(50% 0.11 90);
+  --hm-crew-3: oklch(50% 0.14 145);
+  --hm-crew-4: oklch(50% 0.1 185);
+  --hm-crew-5: oklch(50% 0.12 220);
+  --hm-crew-6: oklch(50% 0.19 262);
+  --hm-crew-7: oklch(50% 0.19 295);
+  --hm-crew-8: oklch(50% 0.19 330);
+  --hm-crew-9: oklch(50% 0.17 358);
+
+  /* status */
+  --hm-ok: oklch(58% 0.15 150);
+  --hm-idle: oklch(76% 0.01 40);
+  --hm-warn: oklch(52% 0.12 65);
+  --hm-warn-wash: oklch(96% 0.035 80);
+  --hm-danger: oklch(46% 0.17 18);
+
+  --hm-font-body: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --hm-font-display: var(--font-anton), Impact, "Arial Narrow", sans-serif;
+  --hm-font-code: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --hm-radius-control: 2px;
+  --hm-radius-card: 2px;
+  --hm-cut: 10px; /* mecha cut-corner size */
+
+  --hm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --hm-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --hm-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --hm-dur-fast: 120ms;
+  --hm-dur-base: 200ms;
+}

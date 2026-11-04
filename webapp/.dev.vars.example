@@ -1,0 +1,2 @@
+BOARD_PIN=123456
+SESSION_SECRET=replace-with-openssl-rand-hex-32
