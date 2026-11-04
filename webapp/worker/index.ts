@@ -1,3 +1,5 @@
+import { signSession } from './auth'
+
 export { BoardRoom } from './BoardRoom'
 
 export type Env = {
@@ -12,9 +14,29 @@ export function json(data: unknown, status = 200): Response {
 }
 
 export default {
-  async fetch(req: Request, _env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url)
     if (url.pathname === '/api/health') return json({ ok: true })
+    if (url.pathname === '/api/join' && req.method === 'POST') return join(req, env)
     return json({ error: 'not_found' }, 404)
   },
 } satisfies ExportedHandler<Env>
+
+async function readJson<T>(req: Request): Promise<Partial<T>> {
+  try {
+    const v = await req.json()
+    return v && typeof v === 'object' ? (v as Partial<T>) : {}
+  } catch {
+    return {}
+  }
+}
+
+async function join(req: Request, env: Env): Promise<Response> {
+  const body = await readJson<{ pin: string; name: string }>(req)
+  if (String(body.pin ?? '') !== env.BOARD_PIN) return json({ error: 'wrong_pin' }, 401)
+  const name = String(body.name ?? '').trim()
+  if (!name || name.length > 32) return json({ error: 'invalid_name' }, 400)
+  const userId = crypto.randomUUID()
+  const token = await signSession(env.SESSION_SECRET, { userId, name })
+  return json({ token, userId, name })
+}
