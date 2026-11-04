@@ -111,6 +111,15 @@ describe('MentionRouter', () => {
     expect(f.system).toEqual([])
   })
 
+  it('stays silent when a crew-originated mention (hop >= 1) hits an offline or busy crew', () => {
+    const f = fakeRouter()
+    f.online.delete('c2')
+    f.router.deliver('c2', f.m('from a crew', 1))
+    for (const t of ['a', 'b', 'c', 'd']) f.router.deliver('c1', f.m(t))
+    f.router.deliver('c1', f.m('overflow from a crew', 1))
+    expect(f.system).toEqual([])
+  })
+
   it('ignores replies for an unknown mention id', () => {
     const f = fakeRouter()
     f.router.onReply('c1', { type: 'reply', mentionId: 'nope', text: 'x', final: true })

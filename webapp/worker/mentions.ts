@@ -36,11 +36,13 @@ export class MentionRouter {
   deliver(crewId: string, input: MentionInput): void {
     if (input.hop >= HOP_LIMIT) return
     const name = this.deps.crewName(crewId)
-    if (!this.deps.isOnline(crewId)) return this.deps.system(`${name} is offline — mention not delivered`)
+    // Notices only for people: a crew whose message happens to mention an unavailable crew shouldn't add chat noise.
+    const notify = (text: string) => (input.hop === 0 ? this.deps.system(text) : undefined)
+    if (!this.deps.isOnline(crewId)) return notify(`${name} is offline — mention not delivered`)
     const m: Pending = { ...input, id: crypto.randomUUID() }
     if (!this.active.has(crewId)) return this.start(crewId, m)
     const q = this.queues.get(crewId) ?? []
-    if (q.length >= QUEUE_LIMIT) return this.deps.system(`${name} is busy — try again shortly`)
+    if (q.length >= QUEUE_LIMIT) return notify(`${name} is busy — try again shortly`)
     q.push(m)
     this.queues.set(crewId, q)
   }
