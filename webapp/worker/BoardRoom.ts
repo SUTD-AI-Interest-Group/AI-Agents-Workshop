@@ -17,6 +17,11 @@ import {
 import type { Session } from './auth'
 import { ChatStore } from './chat'
 import { CREW_NAME_RE, CrewRegistry, type Crew } from './crews'
+import { areaOf, nearbyTexts } from './boardModel'
+import { snapshotRecords } from './boardWriter'
+import { MentionRouter, type MentionInput, type Pending } from './mentions'
+import { parseMentions, shapeText } from '../shared/text'
+import type { FromCrew, ToCrew } from '../shared/protocol'
 import { hashToken, tokenFromRequest } from './auth'
 import type { Env } from './index'
 
@@ -38,12 +43,29 @@ export class BoardRoom extends DurableObject<Env> {
   readonly crews: CrewRegistry
   /** Live crew listener sockets (Task 7). */
   protected crewSockets = new Map<string, WebSocket>()
+  private lastPong = new Map<string, number>()
+  readonly router: MentionRouter
   private eventSockets = new Map<WebSocket, Session>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.chat = new ChatStore(ctx.storage.sql)
     this.crews = new CrewRegistry(ctx.storage.sql)
+    ctx.storage.sql.exec(
+      'CREATE TABLE IF NOT EXISTS board_mentions (shape_id TEXT NOT NULL, crew_id TEXT NOT NULL, text_hash TEXT NOT NULL, PRIMARY KEY (shape_id, crew_id, text_hash))',
+    )
+    this.router = new MentionRouter({
+      send: (crewId, msg) => this.sendToCrew(crewId, msg),
+      isOnline: (crewId) => this.isCrewOnline(crewId),
+      crewName: (crewId) => this.crews.byId(crewId)?.name ?? 'Crew',
+      system: (text) => this.postChat({ authorType: 'system', authorName: 'Board', text }),
+      crewSays: (crewId, text, m) => this.crewSays(crewId, text, m),
+      thinking: (crewId, on) => {
+        this.broadcast({ type: 'thinking', crewId, on })
+        this.broadcastCrews()
+      },
+      now: () => Date.now(),
+    })
   }
 
   getRoom(): TLSocketRoom<TLRecord, SessionMeta> {
@@ -64,6 +86,8 @@ export class BoardRoom extends DurableObject<Env> {
     if (url.pathname === '/api/events' && session) return this.connectEvents(session)
     if (url.pathname === '/api/crews' && session && req.method === 'POST') return this.registerCrew(req, session)
     if (url.pathname === '/api/crews/reclaim' && session && req.method === 'POST') return this.reclaimCrew(req, session)
+    if (url.pathname === '/api/mentions/board' && session && req.method === 'POST') return this.boardMention(req, session)
+    if (url.pathname === '/crew/ws') return this.connectCrew(req)
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 
@@ -104,6 +128,129 @@ export class BoardRoom extends DurableObject<Env> {
     const text = msg.text.trim().slice(0, CHAT_MAX_LEN)
     if (!text) return
     this.postChat({ authorType: 'human', authorName: session.name, text })
+    this.routeChatMentions(text, session.name, 0, null)
+  }
+
+  // ---- mentions ----
+
+  private recentChatContext() {
+    return this.chat.recent(20).map((m) => ({ author: m.authorName, text: m.text }))
+  }
+
+  private routeChatMentions(text: string, author: string, hop: number, authorCrewId: string | null) {
+    const names = this.crews.all()
+    for (const name of parseMentions(text, names.map((c) => c.name))) {
+      const crew = names.find((c) => c.name === name)!
+      if (crew.id === authorCrewId) continue
+      this.router.deliver(crew.id, { source: 'chat', text, author, hop, context: { recentChat: this.recentChatContext() } })
+    }
+  }
+
+  private crewSays(crewId: string, text: string, m: Pending) {
+    const crew = this.crews.byId(crewId)
+    if (!crew) return
+    const info = this.crewInfo(crew)
+    const ref = m.source === 'board' && m.shapeId ? { shapeId: m.shapeId, label: m.text.slice(0, 60) } : undefined
+    this.postChat({ authorType: 'crew', authorName: crew.name, crewId, areaName: info.areaName ?? undefined, text, ref })
+    this.routeChatMentions(text, crew.name, m.hop + 1, crewId)
+  }
+
+  private async boardMention(req: Request, session: Session): Promise<Response> {
+    const body = (await req.json().catch(() => ({}))) as { shapeId?: unknown }
+    const shapeId = String(body.shapeId ?? '')
+    const records = snapshotRecords(this.getRoom())
+    const shape = records.find((r) => r.id === shapeId && r.typeName === 'shape')
+    if (!shape) return Response.json({ error: 'not_found' }, { status: 404 })
+    const text = shapeText(shape as never).trim()
+    const crews = this.crews.all()
+    const textHash = await hashToken(text)
+    const area = areaOf(records, shapeId)
+    const delivered: string[] = []
+    for (const name of parseMentions(text, crews.map((c) => c.name))) {
+      const crew = crews.find((c) => c.name === name)!
+      const fresh = this.ctx.storage.sql
+        .exec('INSERT OR IGNORE INTO board_mentions (shape_id, crew_id, text_hash) VALUES (?, ?, ?) RETURNING 1', shapeId, crew.id, textHash)
+        .toArray().length
+      if (!fresh) continue
+      const input: MentionInput = {
+        source: 'board', text, author: session.name, hop: 0, shapeId,
+        context: { area: area ? { id: area.id, name: area.name } : undefined, nearby: nearbyTexts(records, shapeId).slice(0, 20) },
+      }
+      this.router.deliver(crew.id, input)
+      delivered.push(name)
+    }
+    return Response.json({ delivered })
+  }
+
+  // ---- crew listener socket ----
+
+  private async connectCrew(req: Request): Promise<Response> {
+    const crew = await this.crewFromRequest(req)
+    const { 0: client, 1: server } = new WebSocketPair()
+    server.accept()
+    if (!crew) {
+      server.close(4003, 'invalid token')
+      return new Response(null, { status: 101, webSocket: client })
+    }
+    if (this.crewSockets.has(crew.id)) {
+      this.closeCrewSocket(crew.id, 4001, 'replaced')
+      this.router.onDisconnect(crew.id)
+    }
+    this.crewSockets.set(crew.id, server)
+    this.lastPong.set(crew.id, Date.now())
+    server.addEventListener('message', (e) => this.onCrewMessage(crew.id, e.data))
+    const drop = () => {
+      if (this.crewSockets.get(crew.id) !== server) return // superseded socket
+      this.crewSockets.delete(crew.id)
+      this.router.onDisconnect(crew.id)
+      this.broadcastCrews()
+    }
+    server.addEventListener('close', drop)
+    server.addEventListener('error', drop)
+    this.sendToCrew(crew.id, { type: 'hello', crew: this.crewInfo(crew) })
+    this.broadcastCrews()
+    await this.ensureAlarm()
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  private onCrewMessage(crewId: string, data: unknown) {
+    let msg: FromCrew
+    try {
+      msg = JSON.parse(String(data))
+    } catch {
+      return
+    }
+    this.lastPong.set(crewId, Date.now())
+    this.router.onReply(crewId, msg)
+  }
+
+  private sendToCrew(crewId: string, msg: ToCrew): boolean {
+    const ws = this.crewSockets.get(crewId)
+    if (!ws) return false
+    try {
+      ws.send(JSON.stringify(msg))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private async ensureAlarm() {
+    if ((await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + 30_000)
+  }
+
+  /** Every 30 s while crews are connected: ping, drop silent sockets, time out stuck mentions. */
+  async alarm() {
+    const now = Date.now()
+    for (const crewId of [...this.crewSockets.keys()]) {
+      if (now - (this.lastPong.get(crewId) ?? now) > 75_000) {
+        this.closeCrewSocket(crewId, 4000, 'heartbeat timeout')
+        this.router.onDisconnect(crewId)
+        this.broadcastCrews()
+      } else this.sendToCrew(crewId, { type: 'ping' })
+    }
+    this.router.tick()
+    if (this.crewSockets.size) await this.ctx.storage.setAlarm(now + 30_000)
   }
 
   postChat(m: Omit<ChatMessage, 'id' | 'ts'>): ChatMessage {
@@ -160,8 +307,8 @@ export class BoardRoom extends DurableObject<Env> {
     return this.crewSockets.has(crewId)
   }
 
-  isCrewBusy(_crewId: string): boolean {
-    return false
+  isCrewBusy(crewId: string): boolean {
+    return this.router?.isBusy(crewId) ?? false
   }
 
   /** Crew token from Bearer header, ?token=, or a /mcp/<token> path. */
