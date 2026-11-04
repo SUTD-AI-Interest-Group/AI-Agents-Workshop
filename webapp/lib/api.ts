@@ -6,8 +6,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Origin of the Worker API: same origin in production, NEXT_PUBLIC_API_ORIGIN (wrangler dev) under `next dev`. */
+export function apiOrigin(): string {
+  return process.env.NEXT_PUBLIC_API_ORIGIN || window.location.origin
+}
+
 export function wsUrl(path: string, params: Record<string, string>): string {
-  const u = new URL(path, window.location.href)
+  const u = new URL(path, apiOrigin())
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
   return u.toString()
@@ -17,7 +22,11 @@ export function wsUrl(path: string, params: Record<string, string>): string {
 export async function api<T>(path: string, body?: unknown, session?: StoredSession | null): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (session) headers.authorization = `Bearer ${session.token}`
-  const res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body) })
+  const res = await fetch(new URL(path, apiOrigin()), {
+    method: body === undefined ? 'GET' : 'POST',
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
   const data = (await res.json().catch(() => ({}))) as T & { error?: string }
   if (!res.ok) {
     if (res.status === 401 && session) {

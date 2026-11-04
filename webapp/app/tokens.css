@@ -1,0 +1,45 @@
+/* Hallmark · genre: modern-minimal · macrostructure: App shell (canvas + side panel) · theme: Cobalt (palette) + Geist/Geist Mono (preserved)
+ * tone: technical · anchor hue: cobalt 256 · enrichment: none · nav: none · footer: none
+ * axes: paper-band light · display-style geometric-sans (Geist) · accent-hue cool
+ */
+:root {
+  /* paper + ink — cool engineered, never #fff / #000 */
+  --hm-paper: oklch(98.5% 0.004 250);
+  --hm-surface: oklch(99.4% 0.002 250);
+  --hm-sunken: oklch(96.4% 0.006 252);
+  --hm-ink: oklch(24% 0.02 258);
+  --hm-ink-2: oklch(34% 0.018 257);
+  --hm-muted: oklch(50% 0.016 257);
+  --hm-rule: oklch(91.5% 0.008 255);
+  --hm-rule-2: oklch(86% 0.01 255);
+
+  /* the one signal */
+  --hm-accent: oklch(58% 0.2 256);
+  --hm-accent-hover: oklch(52% 0.2 256);
+  --hm-accent-ink: oklch(98.5% 0.004 250);
+  --hm-accent-wash: oklch(95.5% 0.028 256);
+
+  /* the one dark beat: env / connection card */
+  --hm-graphite: oklch(22% 0.016 260);
+  --hm-graphite-2: oklch(28% 0.018 260);
+  --hm-graphite-ink: oklch(91% 0.01 255);
+  --hm-graphite-muted: oklch(68% 0.015 257);
+  --hm-accent-on-dark: oklch(76% 0.13 256);
+
+  /* status */
+  --hm-ok: oklch(62% 0.15 155);
+  --hm-idle: oklch(78% 0.01 257);
+  --hm-danger: oklch(55% 0.19 27);
+
+  --hm-font-body: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --hm-font-code: "Geist Mono", "Geist Mono Fallback", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --hm-radius-control: 6px;
+  --hm-radius-card: 10px;
+
+  --hm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --hm-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --hm-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --hm-dur-fast: 120ms;
+  --hm-dur-base: 200ms;
+}

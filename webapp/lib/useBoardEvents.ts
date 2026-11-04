@@ -1,5 +1,7 @@
+'use client'
+
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, CrewInfo, OnlineUser, ServerEvent } from '../shared/protocol'
+import type { ChatMessage, CrewInfo, OnlineUser, ServerEvent } from '@/shared/protocol'
 import { wsUrl } from './api'
 
 export type BoardEvents = {

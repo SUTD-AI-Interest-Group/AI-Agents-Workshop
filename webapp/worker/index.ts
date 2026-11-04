@@ -14,8 +14,30 @@ export function json(data: unknown, status = 200): Response {
   return Response.json(data, { status })
 }
 
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'content-type, authorization, mcp-protocol-version, mcp-session-id',
+  'access-control-max-age': '86400',
+}
+
+/** Auth is bearer-token only (no cookies), so a permissive CORS policy is safe and lets `next dev` call the API. */
+function withCors(res: Response): Response {
+  if (res.status === 101 || res.webSocket) return res
+  const out = new Response(res.body, res)
+  for (const [k, v] of Object.entries(CORS)) out.headers.set(k, v)
+  return out
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
+    return withCors(await route(req, env))
+  },
+} satisfies ExportedHandler<Env>
+
+async function route(req: Request, env: Env): Promise<Response> {
+  {
     const url = new URL(req.url)
     if (url.pathname === '/api/health') return json({ ok: true })
     if (url.pathname === '/api/join' && req.method === 'POST') return join(req, env)
@@ -26,8 +48,8 @@ export default {
       return forward(req, env, session)
     }
     return json({ error: 'not_found' }, 404)
-  },
-} satisfies ExportedHandler<Env>
+  }
+}
 
 async function readJson<T>(req: Request): Promise<Partial<T>> {
   try {

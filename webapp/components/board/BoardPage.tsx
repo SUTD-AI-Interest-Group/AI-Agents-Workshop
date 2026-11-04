@@ -1,12 +1,14 @@
+'use client'
+
 import { useSync } from '@tldraw/sync'
 import { useCallback, useMemo, useState } from 'react'
 import { type Editor, inlineBase64AssetStore, setUserPreferences, Tldraw } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { wsUrl } from './api'
-import { SidePanel } from './panel/SidePanel'
-import type { StoredSession } from './session'
-import { useBoardEvents } from './useBoardEvents'
-import { useBoardMentionDetector } from './useBoardMentionDetector'
+import { wsUrl } from '@/lib/api'
+import type { StoredSession } from '@/lib/session'
+import { useBoardEvents } from '@/lib/useBoardEvents'
+import { useBoardMentionDetector } from '@/lib/useBoardMentionDetector'
+import { SidePanel } from './SidePanel'
 
 export function BoardPage({ session }: { session: StoredSession }) {
   useMemo(() => setUserPreferences({ id: session.userId, name: session.name }), [session.userId, session.name])
@@ -18,11 +20,11 @@ export function BoardPage({ session }: { session: StoredSession }) {
   useBoardMentionDetector(editor, events.crews, session)
 
   return (
-    <div className="board">
-      <div className="board-canvas">
+    <div className="fixed inset-0 flex bg-background">
+      <div className="relative min-w-0 flex-1">
         <Tldraw
           store={store}
-          licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
+          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           onMount={(e) => {
             setEditor(e)
             ;(window as unknown as { editor: unknown }).editor = e // handle for e2e tests and debugging

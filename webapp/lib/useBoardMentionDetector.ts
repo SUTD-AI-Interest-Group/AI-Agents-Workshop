@@ -1,7 +1,9 @@
+'use client'
+
 import { useEffect, useRef } from 'react'
 import type { Editor, TLShapeId } from 'tldraw'
-import type { CrewInfo } from '../shared/protocol'
-import { parseMentions, shapeText } from '../shared/text'
+import type { CrewInfo } from '@/shared/protocol'
+import { parseMentions, shapeText } from '@/shared/text'
 import { api } from './api'
 import type { StoredSession } from './session'
 
