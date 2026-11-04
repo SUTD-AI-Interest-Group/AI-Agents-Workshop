@@ -257,3 +257,34 @@ def test_crew_events_become_typed_progress_for_the_current_mention_only():
         srv.next(timeout=0.3)
     board.stop()
     srv.close()
+
+
+def test_backoff_resets_after_a_successful_connection():
+    stamps = []
+
+    def on_connect(srv, ws, n):
+        stamps.append(time.time())
+        if n <= 3:
+            ws.close(1011, "flaky")  # failures before any hello: backoff grows 0.05 → 0.1 → 0.2
+            return
+        if n == 4:
+            ws.send(json.dumps(HELLO))  # a successful connection...
+            time.sleep(0.05)
+            ws.close(1011, "blip")  # ...then a blip: the next retry should be quick again
+            return
+        ws.send(json.dumps(HELLO))
+        srv.pump(ws)
+
+    srv = FakeServer(on_connect)
+    board = load_board().Board(url=srv.url, token="t")
+    board._backoff_start = 0.05
+    board.on_mention(lambda m: "x")
+    run_in_thread(board)
+    deadline = time.time() + 5
+    while len(stamps) < 5 and time.time() < deadline:
+        time.sleep(0.02)
+    assert len(stamps) >= 5
+    gap_after_success = stamps[4] - stamps[3] - 0.05
+    assert gap_after_success < 0.2, gap_after_success
+    board.stop()
+    srv.close()

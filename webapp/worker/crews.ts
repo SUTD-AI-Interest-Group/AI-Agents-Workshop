@@ -56,6 +56,11 @@ export class CrewRegistry {
     return token
   }
 
+  /** Detach a crew from its owner; anyone with the PIN can reclaim it by name. */
+  release(id: string) {
+    this.sql.exec("UPDATE crews SET owner_user_id = '' WHERE id = ?", id)
+  }
+
   byId(id: string) {
     return this.one('SELECT * FROM crews WHERE id = ?', id)
   }

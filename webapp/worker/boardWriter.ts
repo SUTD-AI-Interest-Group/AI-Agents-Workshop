@@ -34,10 +34,26 @@ const HEADING_H = 70
 
 /** Writes crew output onto the canvas, always inside a team area. */
 export class BoardWriter {
+  /** Per-crew write queue: overlapping writes (webhook + MCP) must not each create a fallback area. */
+  private queues = new Map<string, Promise<unknown>>()
+
   constructor(
     private room: () => TLSocketRoom<TLRecord, any>,
     private setCrewArea: (crewId: string, areaId: string) => void,
+    private getCrew: (crewId: string) => Crew | null,
   ) {}
+
+  /** Run `fn` after this crew's earlier writes finish, with the crew re-read (its area may have just been created). */
+  private serial<T>(crew: Crew, fn: (fresh: Crew) => Promise<T>): Promise<T> {
+    const prev = this.queues.get(crew.id) ?? Promise.resolve()
+    const next = prev.catch(() => {}).then(() => fn(this.getCrew(crew.id) ?? crew))
+    const tail = next.catch(() => {})
+    this.queues.set(crew.id, tail)
+    tail.then(() => {
+      if (this.queues.get(crew.id) === tail) this.queues.delete(crew.id)
+    })
+    return next
+  }
 
   private records() {
     return snapshotRecords(this.room())
@@ -84,7 +100,11 @@ export class BoardWriter {
     return out
   }
 
-  async addNotes(crew: Crew, areaRef: string | null | undefined, texts: string[], color?: TLDefaultColorStyle): Promise<string[]> {
+  addNotes(crew: Crew, areaRef: string | null | undefined, texts: string[], color?: TLDefaultColorStyle): Promise<string[]> {
+    return this.serial(crew, (c) => this.addNotesNow(c, areaRef, texts, color))
+  }
+
+  private async addNotesNow(crew: Crew, areaRef: string | null | undefined, texts: string[], color?: TLDefaultColorStyle): Promise<string[]> {
     const area = await this.resolveArea(crew, areaRef)
     const records = this.records()
     const { positions, growTo } = nextNotePositions(records, area.id, texts.length)
@@ -100,8 +120,12 @@ export class BoardWriter {
     return headingId
   }
 
+  addSection(crew: Crew, areaRef: string | null | undefined, title: string, items: string[]): Promise<{ headingId: string; noteIds: string[]; areaId: string }> {
+    return this.serial(crew, (c) => this.addSectionNow(c, areaRef, title, items))
+  }
+
   /** A heading on its own row below existing content, then a grid of notes beneath it. */
-  async addSection(crew: Crew, areaRef: string | null | undefined, title: string, items: string[]): Promise<{ headingId: string; noteIds: string[]; areaId: string }> {
+  private async addSectionNow(crew: Crew, areaRef: string | null | undefined, title: string, items: string[]): Promise<{ headingId: string; noteIds: string[]; areaId: string }> {
     const area = await this.resolveArea(crew, areaRef)
     const records = this.records()
     const kids = records.filter((r): r is TLShape => r.typeName === 'shape' && r.parentId === area.id)

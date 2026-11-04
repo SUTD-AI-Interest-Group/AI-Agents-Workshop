@@ -183,6 +183,7 @@ class Board:
         self._stop = threading.Event()
         self._jobs: "queue.Queue[Optional[Mention]]" = queue.Queue()
         self._backoff_start = 1.0
+        self._greeted = False  # set when the board says hello on the current connection
         self._current: Optional[Mention] = None
         self._progress_lock = threading.Lock()
         self._last_progress: Optional[tuple[str, str]] = None
@@ -207,7 +208,10 @@ class Board:
         backoff = self._backoff_start
         try:
             while not self._stop.is_set():
+                self._greeted = False
                 code = self._connect_once()
+                if self._greeted:
+                    backoff = self._backoff_start  # the last connection worked: retry quickly after a blip
                 if code == REPLACED:
                     print("Another listener took over this crew. Exiting.")
                     return
@@ -267,6 +271,7 @@ class Board:
         if kind == "ping":
             self._send({"type": "pong"})
         elif kind == "hello":
+            self._greeted = True
             crew = msg.get("crew") or {}
             area = crew.get("areaName") or "no team area yet"
             print(f"Connected as @{crew.get('name')} (team area: {area}). Waiting for mentions…")

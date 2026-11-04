@@ -76,3 +76,17 @@ it('broadcasts the crew list when a crew is registered', async () => {
   expect(ev.crews.length).toBeGreaterThan(0)
   watcher.ws.close()
 })
+
+it('reclaiming another crew releases the one you owned, so you own exactly one', async () => {
+  const mine = await registerCrew(uniq('MineA'))
+  const other = await registerCrew(uniq('OtherB'))
+  const r = await post('/api/crews/reclaim', { name: other.crew.name }, mine.user.token)
+  expect(r.status).toBe(200)
+  await runInDurableObject(roomStub(), async (i: BoardRoom) => {
+    const owned = i.crews.all().filter((c) => c.ownerUserId === r.body.crew.ownerUserId)
+    expect(owned.map((c) => c.name)).toEqual([other.crew.name])
+    expect(i.crews.byId(mine.crew.id)?.ownerUserId).toBe('')
+    // the released crew still exists and can be reclaimed by name later
+    expect(i.crews.byName(mine.crew.name)).not.toBeNull()
+  })
+})

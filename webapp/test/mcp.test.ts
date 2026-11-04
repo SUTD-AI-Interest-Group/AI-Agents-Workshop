@@ -159,3 +159,18 @@ describe('MCP server', () => {
     human.ws.close()
   })
 })
+
+describe('concurrent writes', () => {
+  it('two overlapping writes for an area-less crew create a single fallback area', async () => {
+    const name = uniq('Race')
+    const { crew } = await registerCrew(name)
+    await runInDurableObject(roomStub(), async (i: BoardRoom) => {
+      const c = i.crews.byId(crew.id)!
+      await Promise.all([i.writer.addNotes(c, null, ['a']), i.writer.addSection(c, null, 'Card', ['body']), i.writer.addNotes(c, null, ['b'])])
+    })
+    const all = await shapes()
+    const frames = all.filter((s) => s.type === 'frame' && (s.props as { name: string }).name === `${name} area`)
+    expect(frames).toHaveLength(1)
+    expect(all.filter((s) => s.parentId === frames[0].id)).toHaveLength(4) // two stickies + heading + body note
+  })
+})

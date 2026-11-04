@@ -127,11 +127,12 @@ export function ConfigTab({ editor, crews, session }: { editor: Editor | null; c
   const [reclaimName, setReclaimName] = useState('')
   const [busy, setBusy] = useState<'save' | 'reclaim' | null>(null)
 
+  // When your crew changes (first load, or after reclaiming another one), show that crew's details and token.
   useEffect(() => {
     if (!mine) return
-    setName((n) => n || mine.name)
-    setAreaId((a) => (a !== NO_AREA ? a : mine.areaId ?? NO_AREA))
-    setToken((t) => t ?? loadToken(mine.id))
+    setName(mine.name)
+    setAreaId(mine.areaId ?? NO_AREA)
+    setToken(loadToken(mine.id))
   }, [mine?.id])
 
   async function submit(kind: 'save' | 'reclaim', path: string, body: unknown) {

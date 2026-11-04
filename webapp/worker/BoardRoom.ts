@@ -94,6 +94,7 @@ export class BoardRoom extends DurableObject<Env> {
         this.crews.update(crewId, { areaId })
         this.broadcastCrews()
       },
+      (crewId) => this.crews.byId(crewId),
     )
   }
 
@@ -520,6 +521,9 @@ export class BoardRoom extends DurableObject<Env> {
     const body = (await req.json().catch(() => ({}))) as { name?: unknown }
     const crew = this.crews.byName(String(body.name ?? '').trim())
     if (!crew) return Response.json({ error: 'not_found' }, { status: 404 })
+    // One crew per person: reclaiming releases any other crew you owned (it keeps running and can be reclaimed by name).
+    const previous = this.crews.byOwner(session.userId)
+    if (previous && previous.id !== crew.id) this.crews.release(previous.id)
     const token = await this.crews.rotateToken(crew.id, session.userId)
     this.closeCrewSocket(crew.id, 4001, 'replaced')
     this.router.onDisconnect(crew.id)
