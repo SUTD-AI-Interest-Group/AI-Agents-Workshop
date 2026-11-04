@@ -56,6 +56,7 @@ export class BoardRoom extends DurableObject<Env> {
     super(ctx, env)
     this.chat = new ChatStore(ctx.storage.sql)
     this.crews = new CrewRegistry(ctx.storage.sql)
+    ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS webhook_events (crew_id TEXT NOT NULL, event_id TEXT NOT NULL, PRIMARY KEY (crew_id, event_id))')
     ctx.storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS board_mentions (shape_id TEXT NOT NULL, crew_id TEXT NOT NULL, text_hash TEXT NOT NULL, PRIMARY KEY (shape_id, crew_id, text_hash))',
     )
@@ -100,6 +101,7 @@ export class BoardRoom extends DurableObject<Env> {
     if (url.pathname === '/api/crews/reclaim' && session && req.method === 'POST') return this.reclaimCrew(req, session)
     if (url.pathname === '/api/mentions/board' && session && req.method === 'POST') return this.boardMention(req, session)
     if (url.pathname === '/crew/ws') return this.connectCrew(req)
+    if (url.pathname === '/api/webhook' && req.method === 'POST') return this.webhook(req)
     if (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) return handleMcp(req, this.mcpHost(), await this.crewFromRequest(req))
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
@@ -328,6 +330,32 @@ export class BoardRoom extends DurableObject<Env> {
 
   isCrewOnline(crewId: string): boolean {
     return this.crewSockets.has(crewId) || this.isPolling(crewId)
+  }
+
+  // ---- results webhook ----
+
+  private async webhook(req: Request): Promise<Response> {
+    const crew = await this.crewFromRequest(req)
+    if (!crew) return Response.json({ error: 'unauthorized' }, { status: 401 })
+    const body = (await req.json().catch(() => ({}))) as { event_id?: unknown; title?: unknown; content?: unknown; sources?: unknown }
+    const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : ''
+    const content = typeof body.content === 'string' ? body.content.trim() : ''
+    if (!title || !content) return Response.json({ error: 'title_and_content_required' }, { status: 400 })
+    const eventId = typeof body.event_id === 'string' && body.event_id ? body.event_id.slice(0, 200) : crypto.randomUUID()
+    const fresh = this.ctx.storage.sql
+      .exec('INSERT OR IGNORE INTO webhook_events (crew_id, event_id) VALUES (?, ?) RETURNING 1', crew.id, eventId)
+      .toArray().length
+    if (!fresh) return Response.json({ ok: true, duplicate: true })
+    const items = content.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).slice(0, 12).map((p) => p.slice(0, 1000))
+    const sources = Array.isArray(body.sources) ? body.sources.map(String).filter(Boolean).slice(0, 20) : []
+    if (sources.length) items.push('Sources:\n' + sources.map((s) => `- ${s}`).join('\n'))
+    const r = await this.writer.addSection(crew, null, title, items)
+    const latest = this.crews.byId(crew.id)!
+    this.postChat({
+      authorType: 'crew', authorName: latest.name, crewId: latest.id, areaName: this.crewInfo(latest).areaName ?? undefined,
+      text: `published: ${title}`, ref: { shapeId: r.headingId, label: title.slice(0, 60) },
+    })
+    return Response.json({ ok: true, shapeIds: [r.headingId, ...r.noteIds] })
   }
 
   // ---- MCP host ----
