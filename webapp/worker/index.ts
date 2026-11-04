@@ -1,4 +1,5 @@
-import { signSession } from './auth'
+import { getSession, signSession, type Session } from './auth'
+import { SESSION_HEADER } from './BoardRoom'
 
 export { BoardRoom } from './BoardRoom'
 
@@ -18,6 +19,11 @@ export default {
     const url = new URL(req.url)
     if (url.pathname === '/api/health') return json({ ok: true })
     if (url.pathname === '/api/join' && req.method === 'POST') return join(req, env)
+    if (url.pathname === '/api/sync') {
+      const session = await getSession(req, env)
+      if (!session) return json({ error: 'unauthorized' }, 401)
+      return forward(req, env, session)
+    }
     return json({ error: 'not_found' }, 404)
   },
 } satisfies ExportedHandler<Env>
@@ -39,4 +45,13 @@ async function join(req: Request, env: Env): Promise<Response> {
   const userId = crypto.randomUUID()
   const token = await signSession(env.SESSION_SECRET, { userId, name })
   return json({ token, userId, name })
+}
+
+/** Forward to the single BoardRoom DO, attaching the verified session (client-sent copies are replaced). */
+export function forward(req: Request, env: Env, session: Session | null): Promise<Response> {
+  const headers = new Headers(req.headers)
+  headers.delete(SESSION_HEADER)
+  if (session) headers.set(SESSION_HEADER, JSON.stringify(session))
+  const stub = env.BOARD_ROOM.get(env.BOARD_ROOM.idFromName('main'))
+  return stub.fetch(new Request(req, { headers }))
 }
