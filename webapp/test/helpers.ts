@@ -52,3 +52,21 @@ export async function openEvents(name: string, userId?: string) {
 }
 
 export const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms))
+
+export async function post(path: string, body: unknown, token?: string) {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (token) headers.authorization = `Bearer ${token}`
+  const res = await SELF.fetch(`https://x${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+  return { status: res.status, body: (await res.json()) as any }
+}
+
+export async function registerCrew(name: string, areaId: string | null = null, owner?: { token: string }) {
+  const user = owner ?? (await sessionToken(`${name}-owner`))
+  const r = await post('/api/crews', { name, areaId }, user.token)
+  if (r.status !== 201) throw new Error(`register failed ${r.status} ${JSON.stringify(r.body)}`)
+  return { ...r.body, user } as { crew: import('../shared/protocol').CrewInfo; token: string; user: { token: string } }
+}
+
+let uniqCounter = 0
+/** Storage persists across tests in a file, so crew names must be unique per test. */
+export const uniq = (base: string) => `${base}${++uniqCounter}x${Math.floor(Math.random() * 1e4)}`.slice(0, 24)

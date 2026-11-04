@@ -16,6 +16,8 @@ import {
 } from '../shared/protocol'
 import type { Session } from './auth'
 import { ChatStore } from './chat'
+import { CREW_NAME_RE, CrewRegistry, type Crew } from './crews'
+import { hashToken, tokenFromRequest } from './auth'
 import type { Env } from './index'
 
 export const schema = createTLSchema({ shapes: defaultShapeSchemas, bindings: defaultBindingSchemas })
@@ -33,11 +35,15 @@ export function sessionOf(req: Request): Session | null {
 export class BoardRoom extends DurableObject<Env> {
   private room: TLSocketRoom<TLRecord, SessionMeta> | null = null
   readonly chat: ChatStore
+  readonly crews: CrewRegistry
+  /** Live crew listener sockets (Task 7). */
+  protected crewSockets = new Map<string, WebSocket>()
   private eventSockets = new Map<WebSocket, Session>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.chat = new ChatStore(ctx.storage.sql)
+    this.crews = new CrewRegistry(ctx.storage.sql)
   }
 
   getRoom(): TLSocketRoom<TLRecord, SessionMeta> {
@@ -56,6 +62,8 @@ export class BoardRoom extends DurableObject<Env> {
     const session = sessionOf(req)
     if (url.pathname === '/api/sync' && session) return this.connectSync(url, session)
     if (url.pathname === '/api/events' && session) return this.connectEvents(session)
+    if (url.pathname === '/api/crews' && session && req.method === 'POST') return this.registerCrew(req, session)
+    if (url.pathname === '/api/crews/reclaim' && session && req.method === 'POST') return this.reclaimCrew(req, session)
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 
@@ -125,7 +133,80 @@ export class BoardRoom extends DurableObject<Env> {
     return [...byId.values()]
   }
 
+  // ---- crews ----
+
+  crewInfo(c: Crew): CrewInfo {
+    const area = c.areaId ? (this.getRoom().getRecord(c.areaId) as { props?: { name?: string } } | undefined) : undefined
+    return {
+      id: c.id,
+      name: c.name,
+      areaId: c.areaId,
+      areaName: area?.props?.name ?? null,
+      ownerUserId: c.ownerUserId,
+      online: this.isCrewOnline(c.id),
+      busy: this.isCrewBusy(c.id),
+    }
+  }
+
   crewInfos(): CrewInfo[] {
-    return []
+    return this.crews.all().map((c) => this.crewInfo(c))
+  }
+
+  broadcastCrews() {
+    this.broadcast({ type: 'crews', crews: this.crewInfos() })
+  }
+
+  isCrewOnline(crewId: string): boolean {
+    return this.crewSockets.has(crewId)
+  }
+
+  isCrewBusy(_crewId: string): boolean {
+    return false
+  }
+
+  /** Crew token from Bearer header, ?token=, or a /mcp/<token> path. */
+  async crewFromRequest(req: Request): Promise<Crew | null> {
+    const m = new URL(req.url).pathname.match(/^\/mcp\/(crw_[0-9a-f]{32})$/)
+    const token = m?.[1] ?? tokenFromRequest(req)
+    return token ? this.crews.byTokenHash(await hashToken(token)) : null
+  }
+
+  private async registerCrew(req: Request, session: Session): Promise<Response> {
+    const body = (await req.json().catch(() => ({}))) as { name?: unknown; areaId?: unknown }
+    const name = String(body.name ?? '').trim()
+    const areaId = typeof body.areaId === 'string' && body.areaId ? body.areaId : null
+    if (!CREW_NAME_RE.test(name)) return Response.json({ error: 'invalid_name' }, { status: 400 })
+    const taken = this.crews.byName(name)
+    const mine = this.crews.byOwner(session.userId)
+    if (taken && taken.id !== mine?.id) return Response.json({ error: 'name_taken' }, { status: 409 })
+    if (mine) {
+      const crew = this.crews.update(mine.id, { name, areaId })!
+      this.broadcastCrews()
+      return Response.json({ crew: this.crewInfo(crew), token: null })
+    }
+    const { crew, token } = await this.crews.create(name, areaId, session.userId)
+    this.broadcastCrews()
+    return Response.json({ crew: this.crewInfo(crew), token }, { status: 201 })
+  }
+
+  private async reclaimCrew(req: Request, session: Session): Promise<Response> {
+    const body = (await req.json().catch(() => ({}))) as { name?: unknown }
+    const crew = this.crews.byName(String(body.name ?? '').trim())
+    if (!crew) return Response.json({ error: 'not_found' }, { status: 404 })
+    const token = await this.crews.rotateToken(crew.id, session.userId)
+    this.closeCrewSocket(crew.id, 4001, 'replaced')
+    this.broadcastCrews()
+    return Response.json({ crew: this.crewInfo(this.crews.byId(crew.id)!), token })
+  }
+
+  closeCrewSocket(crewId: string, code: number, reason: string) {
+    const ws = this.crewSockets.get(crewId)
+    if (!ws) return
+    this.crewSockets.delete(crewId)
+    try {
+      ws.close(code, reason)
+    } catch {
+      /* already closed */
+    }
   }
 }
